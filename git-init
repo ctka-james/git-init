@@ -1,0 +1,97 @@
+#!/bin/bash
+
+set -e
+
+echo "===================================="
+echo " Git Repository Initialization"
+echo "===================================="
+
+# 檢查是否已初始化 Git
+if [ -d ".git" ]; then
+    echo "❌ 此目錄已經是 Git Repository"
+    exit 1
+fi
+
+echo "▶ Initializing Git..."
+
+git init -b main
+
+echo "▶ Creating .gitignore..."
+
+cat > .gitignore << 'EOF'
+# -------------------------
+# OS
+# -------------------------
+.DS_Store
+Thumbs.db
+
+# -------------------------
+# IDE
+# -------------------------
+.vscode/
+.idea/
+
+# -------------------------
+# Logs
+# -------------------------
+*.log
+
+# -------------------------
+# Temp
+# -------------------------
+tmp/
+temp/
+
+# -------------------------
+# Composer
+# -------------------------
+vendor/
+
+# -------------------------
+# Node
+# -------------------------
+node_modules/
+npm-debug.log*
+
+# -------------------------
+# Environment
+# -------------------------
+.env
+.env.*
+
+# -------------------------
+# WordPress
+# -------------------------
+
+
+# -------------------------
+# Misc
+# -------------------------
+*.swp
+*.swo
+EOF
+
+echo "▶ Creating first commit..."
+
+git add .
+git commit -m "Initial commit"
+
+echo "▶ Creating development branch..."
+
+git branch develop
+git branch ft
+git checkout ft
+
+echo
+echo "===================================="
+echo " Repository Created Successfully"
+echo "===================================="
+echo
+git branch
+
+echo
+echo "===================================="
+echo " git config --global --list"
+echo "===================================="
+echo
+git config --global --list
