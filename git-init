@@ -72,15 +72,15 @@ npm-debug.log*
 EOF
 
 echo "▶ Creating first commit..."
-
+INITIAL_COMMIT_MSG="chore: initial commit"
 git add .
-git commit -m "build: Initial commit"
+git commit -m "$INITIAL_COMMIT_MSG"
 
 echo "▶ Creating development branch..."
 
 git branch develop
-git branch ft
-git checkout ft
+git branch feat
+git checkout feat
 
 echo
 echo "===================================="
