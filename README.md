@@ -12,9 +12,10 @@
 - 預設主要分支為 `main`
 - 自動建立標準 `.gitignore`
 - 建立第一次 Commit (`Initial commit`)
+- 建立 `doc` 分支
 - 建立 `develop` 分支
-- 建立 `ft` (Feature) 分支
-- 自動切換至 `ft`
+- 建立 `feat` (Feature) 分支
+- 自動切換至 `feat`
 - 顯示目前所有 Branch
 - 顯示目前 Git Global 設定
 
@@ -22,14 +23,15 @@
 
 ```text
 main
+├── docs
 ├── develop
-└── ft   (目前所在分支)
+└── feat   (目前所在分支)
 ```
 
 初始化完成後，目前工作分支會停留在：
 
 ```text
-ft
+feat
 ```
 
 方便直接開始開發新功能。
@@ -106,8 +108,8 @@ ft
 4. `git add .`
 5. `git commit -m "Initial commit"`
 6. 建立 `develop`
-7. 建立 `ft`
-8. 切換至 `ft`
+7. 建立 `feat`
+8. 切換至 `feat`
 9. 顯示目前 Branch
 10. 顯示 Git Global Config
 
@@ -165,8 +167,9 @@ Initialized empty Git repository
  Repository Created Successfully
 ====================================
 
+  docs
   develop
-* ft
+* feat
   main
 
 ====================================
