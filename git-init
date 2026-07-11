@@ -71,6 +71,8 @@ npm-debug.log*
 *.swo
 EOF
 
+mkdir docs
+
 echo "▶ Creating first commit..."
 INITIAL_COMMIT_MSG="chore: initial commit"
 git add .
@@ -80,6 +82,7 @@ echo "▶ Creating development branch..."
 
 git branch develop
 git branch feat
+git branch docs
 git checkout feat
 
 echo
