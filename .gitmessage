@@ -1,0 +1,35 @@
+type(scope): subject
+
+# 描述：
+# - why
+# - what
+
+# Footer (Optional)
+#
+# BREAKING CHANGE:
+
+# feat(auth): add JWT authentication
+#
+# Types:
+# feat     新功能
+# fix      修正 Bug
+# docs     文件
+# style    格式調整
+# refactor 重構
+# perf     效能改善
+# test     測試
+# build    建置
+# ci       CI/CD
+# chore    維護
+# revert   回復 Commit
+#
+# ------------------------------------------
+# Commit Subject first word
+# add		新增、加入 | 新增檔案、功能、方法、欄位等
+# register	註冊 | 將某個功能或物件註冊到系統中
+# implement	實作、實現 | 完成某個功能的實際邏輯
+# remove	移除、刪除 | 刪除功能、程式碼、設定
+# rename	重新命名、更名 | 修改名稱，不改功能
+# support	支援、新增支援 | 增加對某項功能或平台的支援
+
+
