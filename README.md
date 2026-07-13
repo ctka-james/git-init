@@ -82,6 +82,13 @@ feat
    /usr/local/bin/git-init
    ```
 
+5. 使用預設的 commit message
+
+   ```bash
+   cp .gitmessage ~/.gitmessage
+   git config --global commit.template ~/.gitmessage
+   ```
+
 ## 使用方式
 
 1. 切換到欲建立 Git Repository 的專案目錄
