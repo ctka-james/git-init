@@ -86,6 +86,13 @@ feat
 
    ```bash
    cp .gitmessage ~/.gitmessage
+   ```
+
+   ```bash
+   cp .vimrc ~/.vimrc
+   ```
+
+   ```bash
    git config --global commit.template ~/.gitmessage
    ```
 
