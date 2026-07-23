@@ -16,9 +16,16 @@ echo "▶ Initializing Git..."
 
 git init -b main
 
-echo "▶ Creating .gitignore..."
+echo "▶ Checking repository contents..."
 
-cat > .gitignore << 'EOF'
+if [ -f .gitignore ]; then
+    echo "▶ Existing .gitignore found. Keeping the current file."
+elif [ -n "$(find . -mindepth 1 -maxdepth 1 ! -name .git -print -quit)" ]; then
+    echo "▶ Directory already contains files. Skipping .gitignore creation to preserve existing project contents."
+else
+    echo "▶ Creating .gitignore..."
+
+    cat > .gitignore << 'EOF'
 # -------------------------
 # OS
 # -------------------------
@@ -70,6 +77,7 @@ npm-debug.log*
 *.swp
 *.swo
 EOF
+fi
 
 mkdir docs
 
