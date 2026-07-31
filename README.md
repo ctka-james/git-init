@@ -12,6 +12,10 @@
 - 預設主要分支為 `main`
 - 自動建立標準 `.gitignore`
 - 建立第一次 Commit (`Initial commit`)
+- 全域安裝與設定 `commitlint`
+- 建立 `commit-msg` Hook 驗證提交訊息
+- 建立 `commit-template.txt` 範本
+- 統一設定 `core.editor` 為 `vim`
 - 建立 `doc` 分支
 - 建立 `develop` 分支
 - 建立 `feat` (Feature) 分支
@@ -94,6 +98,97 @@ feat
    ```bash
    git config --global commit.template ~/.gitmessage
    ```
+
+## Commitlint 與 Commit Template 安裝與操作說明
+
+`git-init` 會在初始化流程中自動完成下列設定，讓新建專案可以直接使用一致的提交規範。
+
+### 1. 安裝 Commitlint
+
+若系統尚未安裝 `npm`，請先安裝 Node.js 與 npm。
+
+若尚未安裝 `commitlint`，執行以下指令：
+
+```bash
+npm install -g \
+    @commitlint/cli \
+    @commitlint/config-conventional
+```
+
+若已安裝 `commitlint`，腳本會直接跳過安裝流程。
+
+### 2. 建立全域 Commitlint 設定
+
+腳本會檢查是否已存在以下設定檔：
+
+```bash
+~/.config/git/commitlint.config.cjs
+```
+
+若尚未存在，會自動建立：
+
+```js
+module.exports = {
+    extends: ['@commitlint/config-conventional']
+};
+```
+
+### 3. 建立 `commit-msg` Git Hook
+
+腳本會建立全域 hook 目錄：
+
+```bash
+mkdir -p ~/.config/git/hooks
+```
+
+並建立 `commit-msg` hook：
+
+```bash
+vim ~/.config/git/hooks/commit-msg
+```
+
+內容如下：
+
+```sh
+#!/bin/sh
+commitlint --config ~/.config/git/commitlint.config.cjs --edit "$1"
+```
+
+最後設定執行權限：
+
+```bash
+chmod +x ~/.config/git/hooks/commit-msg
+```
+
+### 4. 設定 Git 使用全域 Hook
+
+```bash
+git config --global core.hooksPath ~/.config/git/hooks
+```
+
+### 5. 建立 Commit Template
+
+腳本會將目前專案的 `.gitmessage` 複製到：
+
+```bash
+~/.config/git/commit-template.txt
+```
+
+並設定全域 commit template：
+
+```bash
+git config --global commit.template ~/.config/git/commit-template.txt
+```
+
+之後於執行 `git commit` 時，Git 會以 `vim` 開啟模板讓使用者依照格式撰寫提交訊息。
+
+### 6. 設定 Git Editor
+
+若尚未設定 `core.editor`，腳本會自動設定：
+
+```bash
+git config --global core.editor "vim"
+```
 
 ## 使用方式
 
@@ -195,13 +290,6 @@ init.defaultbranch=main
 ```
 
 ## 注意事項
-
-第一次使用 Git 前，請先設定使用者資訊：
-
-```bash
-git config --global user.name "Your Name"
-git config --global user.email "you@example.com"
-```
 
 建議同時設定 Git 預設主分支為 `main`：
 
