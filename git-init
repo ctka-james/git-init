@@ -1,10 +1,69 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-set -e
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+COMMITLINT_CONFIG="$HOME/.config/git/commitlint.config.cjs"
+HOOK_DIR="$HOME/.config/git/hooks"
+HOOK_FILE="$HOOK_DIR/commit-msg"
+COMMIT_TEMPLATE="$HOME/.config/git/commit-template.txt"
+
+cleanup() {
+    if [ $? -ne 0 ]; then
+        echo
+        echo "❌ 安裝或初始化流程失敗，請檢查錯誤訊息。"
+    fi
+}
+trap cleanup EXIT
 
 echo "===================================="
 echo " Git Repository Initialization"
 echo "===================================="
+
+if ! command -v npm >/dev/null 2>&1; then
+    echo "❌ 未偵測到 npm，請先安裝 Node.js 與 npm 後再執行此工具。"
+    exit 1
+fi
+
+if command -v commitlint >/dev/null 2>&1; then
+    echo "▶ Commitlint 已安裝：$(commitlint --version)"
+else
+    echo "▶ Installing Commitlint globally..."
+    npm install -g @commitlint/cli @commitlint/config-conventional
+fi
+
+mkdir -p "$HOME/.config/git"
+
+if [ ! -f "$COMMITLINT_CONFIG" ]; then
+    echo "▶ Creating commitlint config..."
+    cat > "$COMMITLINT_CONFIG" <<'EOF'
+module.exports = {
+    extends: ['@commitlint/config-conventional']
+};
+EOF
+fi
+
+mkdir -p "$HOOK_DIR"
+
+if [ ! -f "$HOOK_FILE" ]; then
+    echo "▶ Creating commit-msg hook..."
+    cat > "$HOOK_FILE" <<'EOF'
+#!/bin/sh
+commitlint --config ~/.config/git/commitlint.config.cjs --edit "$1"
+EOF
+    chmod +x "$HOOK_FILE"
+fi
+
+git config --global core.hooksPath "$HOOK_DIR"
+
+if [ -f "$SCRIPT_DIR/.gitmessage" ]; then
+    cp "$SCRIPT_DIR/.gitmessage" "$COMMIT_TEMPLATE"
+    git config --global commit.template "$COMMIT_TEMPLATE"
+fi
+
+if ! git config --global --get core.editor >/dev/null 2>&1; then
+    git config --global core.editor "vim"
+fi
 
 # 檢查是否已初始化 Git
 if [ -d ".git" ]; then
@@ -13,7 +72,6 @@ if [ -d ".git" ]; then
 fi
 
 echo "▶ Initializing Git..."
-
 git init -b main
 
 echo "▶ Checking repository contents..."
@@ -24,8 +82,7 @@ elif [ -n "$(find . -mindepth 1 -maxdepth 1 ! -name .git -print -quit)" ]; then
     echo "▶ Directory already contains files. Skipping .gitignore creation to preserve existing project contents."
 else
     echo "▶ Creating .gitignore..."
-
-    cat > .gitignore << 'EOF'
+    cat > .gitignore <<'EOF'
 # -------------------------
 # OS
 # -------------------------
@@ -67,11 +124,6 @@ npm-debug.log*
 .env.*
 
 # -------------------------
-# WordPress
-# -------------------------
-
-
-# -------------------------
 # Misc
 # -------------------------
 *.swp
@@ -79,15 +131,14 @@ npm-debug.log*
 EOF
 fi
 
-mkdir docs
+mkdir -p docs
 
 echo "▶ Creating first commit..."
 INITIAL_COMMIT_MSG="chore: initial commit"
 git add .
 git commit -m "$INITIAL_COMMIT_MSG"
 
-echo "▶ Creating development branch..."
-
+echo "▶ Creating development branches..."
 git branch develop
 git branch feat
 git branch docs
