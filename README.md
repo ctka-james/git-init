@@ -85,20 +85,6 @@ feat
    /usr/local/bin/git-init
    ```
 
-5. 使用預設的 commit message
-
-   ```bash
-   cp .gitmessage ~/.gitmessage
-   ```
-
-   ```bash
-   cp .vimrc ~/.vimrc
-   ```
-
-   ```bash
-   git config --global commit.template ~/.gitmessage
-   ```
-
 ## Commitlint 與 Commit Template 安裝與操作說明
 
 `git-init` 會在初始化流程中自動完成下列設定，讓新建專案可以直接使用一致的提交規範。
