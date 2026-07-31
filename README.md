@@ -40,13 +40,12 @@ feat
 
 1. 建立腳本
 
-   建立 `/usr/local/bin/git-init`
-
+   複製 `git-init` Shell Script 到 `/usr/local/bin/git-init`。
+   
    ```bash
-   sudo vim /usr/local/bin/git-init
+   cd git-init
+   sudo cp git-init /usr/local/bin/git-init
    ```
-
-   將 Shell Script 內容貼上。
 
 2. 加入執行權限
 
