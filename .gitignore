@@ -1,1 +1,13 @@
-dev/*
+# Project-local 開發產物；不忽略可能為 source 的泛用副檔名。
+node_modules/
+*.log
+tmp/
+temp/
+.env
+.env.*
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo

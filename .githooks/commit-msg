@@ -1,0 +1,9 @@
+#!/bin/sh
+set -eu
+
+if [ ! -x ./node_modules/.bin/commitlint ]; then
+  printf '%s\n' 'commitlint 本機相依套件不存在；hook 採 fail closed，請由已批准的 Work 流程進行 project-local 安裝。' >&2
+  exit 1
+fi
+
+exec ./node_modules/.bin/commitlint --config ./commitlint.config.cjs --edit "$1"

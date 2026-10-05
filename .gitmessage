@@ -1,36 +1,5 @@
-type(scope): subject
-
-# 描述：
-# - why
-# - what
-
-# Footer (Optional)
-#
-# BREAKING CHANGE:
-
-# feat(auth): add JWT authentication
-#
-# Types:
-# feat     新功能
-# fix      修正 Bug
-# docs     文件
-# style    格式調整
-# refactor 重構
-# perf     效能改善
-# test     測試
-# build    建置
-# ci       CI/CD
-# chore    維護
-# revert   回復 Commit
-#
-# ------------------------------------------
-# Commit Subject first word
-# add		新增、加入 | 新增檔案、功能、方法、欄位等
-# register	註冊 | 將某個功能或物件註冊到系統中
-# update	更新 | 某個檔案更新時使用
-# implement	實作、實現 | 完成某個功能的實際邏輯
-# remove	移除、刪除 | 刪除功能、程式碼、設定
-# rename	重新命名、更名 | 修改名稱，不改功能
-# support	支援、新增支援 | 增加對某項功能或平台的支援
-
-
+# 格式：允許 type 為 feat、fix、refactor、docs、test、chore、style。
+# 第一行必須為 Conventional Commit header，且必須有非空 scope 與摘要。
+# 第二行保留空白；後續至少一行以條列說明實際變更。
+# 範例刻意不提供可直接提交的 header，避免模板內容被誤提交。
+# Human 必須確認繁中文意、變更真實性與 James PASS；機器無法替代此 gate。

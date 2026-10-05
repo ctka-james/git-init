@@ -1,220 +1,470 @@
 #!/usr/bin/env bash
-
+# git-init v2：預設唯讀的專案本機 Git bootstrap。
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-COMMITLINT_CONFIG="$HOME/.config/git/commitlint.config.cjs"
-HOOK_DIR="$HOME/.config/git/hooks"
-HOOK_FILE="$HOOK_DIR/commit-msg"
-COMMIT_TEMPLATE="$HOME/.config/git/commit-template.txt"
+readonly EXIT_USAGE=2 EXIT_BLOCKER=3 EXIT_RISK=4 EXIT_CONFLICT=5 EXIT_PARTIAL=6
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+TARGET_DIR="$(pwd -P)"
+MODE=check
+USER_NAME=""
+USER_EMAIL=""
+MUTATIONS=()
+ISSUES=()
+ISSUE_CODE=0
+EXISTING_REPO=0
+HAS_HEAD=0
+ORIGINAL_CLEAN=1
+HAVE_GIT=0
+LOCAL_NAME=""
+LOCAL_EMAIL=""
+EFFECTIVE_NAME=""
+EFFECTIVE_EMAIL=""
+WORKTREE_STATUS=NO_REPO
+WORKTREE_SCOPE=none
+RECEIPT_DISPOSITIONS=()
+readonly RECEIPT=.git/git-init-v2-receipt
+readonly RECEIPT_MARKER=.git/git-init-v2-receipt.sha256
+readonly MANAGED_PATHS=(.gitmessage commitlint.config.cjs AI-WORKFLOW.template.md .githooks/commit-msg .gitignore)
 
-ensure_git_identity() {
-    local user_name=""
-    local user_email=""
-
-    if ! git config --global --get user.name >/dev/null 2>&1; then
-        while [ -z "$user_name" ]; do
-            read -r -p "請輸入 Git user.name：" user_name
-        done
-        git config --global user.name "$user_name"
-    fi
-
-    if ! git config --global --get user.email >/dev/null 2>&1; then
-        while [ -z "$user_email" ]; do
-            read -r -p "請輸入 Git user.email：" user_email
-        done
-        git config --global user.email "$user_email"
-    fi
+say() { printf '%s\n' "$*"; }
+issue() {
+  local code=$1 kind=$2 detail=$3
+  ISSUES+=("$kind: $detail")
+  (( code > ISSUE_CODE )) && ISSUE_CODE=$code
+  say "$kind: $detail"
 }
+usage() {
+  cat <<'EOF'
+用法：git-init [--check|--dry-run|--init [--user-name 值 --user-email 值]]
 
-cleanup() {
-    if [ $? -ne 0 ]; then
-        echo
-        echo "❌ 安裝或初始化流程失敗，請檢查錯誤訊息。"
-    fi
+預設與 --check 完全唯讀。--dry-run 顯示與 --init 相同的預計動作但不寫入。
+--init 僅在所有 preflight blocker 清除後，建立 project-local 設定；不 add、commit、push、
+checkout、merge、rebase、reset、fetch 或修改 global Git/npm 設定。
+EOF
 }
-trap cleanup EXIT
-
-echo "===================================="
-echo " Git Repository Initialization"
-echo "===================================="
-
-if ! command -v npm >/dev/null 2>&1; then
-    echo "❌ 未偵測到 npm，請先安裝 Node.js 與 npm 後再執行此工具。"
-    exit 1
-fi
-
-if command -v commitlint >/dev/null 2>&1; then
-    echo "▶ Commitlint 已安裝：$(commitlint --version)"
-else
-    echo "▶ Installing Commitlint globally..."
-    npm install -g @commitlint/cli @commitlint/config-conventional
-fi
-
-mkdir -p "$HOME/.config/git"
-
-if [ ! -f "$COMMITLINT_CONFIG" ]; then
-    echo "▶ Creating commitlint config..."
-    cat > "$COMMITLINT_CONFIG" <<'EOF'
-module.exports = {
-    extends: ['@commitlint/config-conventional']
-};
-EOF
-fi
-
-mkdir -p "$HOOK_DIR"
-
-if [ ! -f "$HOOK_FILE" ]; then
-    echo "▶ Creating commit-msg hook..."
-    cat > "$HOOK_FILE" <<'EOF'
-#!/bin/sh
-commitlint --config ~/.config/git/commitlint.config.cjs --edit "$1"
-EOF
-    chmod +x "$HOOK_FILE"
-fi
-
-git config --global core.hooksPath "$HOOK_DIR"
-
-if [ ! -f "$COMMIT_TEMPLATE" ]; then
-    if [ -f "$SCRIPT_DIR/.gitmessage" ]; then
-        cp "$SCRIPT_DIR/.gitmessage" "$COMMIT_TEMPLATE"
+valid_text() {
+  # Bash arguments cannot contain NUL；其餘控制字元在此拒絕。
+  [[ -n $1 && $1 != *$'\n'* && $1 != *$'\r'* && $1 != *[[:cntrl:]]* ]]
+}
+valid_email() {
+  valid_text "$1" && [[ $1 =~ ^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$ ]]
+}
+redact_url() {
+  # 僅顯示 scheme/host/path；永不印出 userinfo、query 或 fragment。
+  local value=$1 rest authority host path scheme
+  value=${value%%\#*}; value=${value%%\?*}
+  rest=${value#*://}
+  if [[ $value != *://* ]]; then say '<非標準 remote URL>'; return; fi
+  scheme=${value%%://*}; authority=${rest%%/*}; host=${authority##*@}; path=""
+  [[ $rest == */* ]] && path=/${rest#*/}
+  [[ -n $host ]] && say "${scheme}://${host}${path}" || say '<遮蔽的 remote URL>'
+}
+managed_same_or_conflict() {
+  local target=$1 source=$2 label=$3
+  if [[ -L $target ]]; then issue "$EXIT_RISK" RISK "$label 為 symlink，拒絕跟隨"; return; fi
+  if [[ -e $target ]] && ! cmp -s -- "$target" "$source"; then
+    issue "$EXIT_CONFLICT" CONFLICT "$label 已存在且內容不同，不覆寫"
+  fi
+  return 0
+}
+contains_source() {
+  find . -mindepth 1 -maxdepth 1 ! -name .git -print -quit | grep -q .
+}
+template_for() {
+  case $1 in
+    .gitmessage) printf '%s\n' "$SCRIPT_DIR/.gitmessage" ;;
+    commitlint.config.cjs) printf '%s\n' "$SCRIPT_DIR/commitlint.config.cjs" ;;
+    AI-WORKFLOW.template.md) printf '%s\n' "$SCRIPT_DIR/AI-WORKFLOW.template.md" ;;
+    .githooks/commit-msg) printf '%s\n' "$SCRIPT_DIR/.githooks/commit-msg" ;;
+    .gitignore) printf '%s\n' "$SCRIPT_DIR/.gitignore" ;;
+    *) return 1 ;;
+  esac
+}
+receipt_allows() {
+  local want=$1 version disposition path hash source marker_digest receipt_digest
+  [[ -f $RECEIPT && ! -L $RECEIPT && -f $RECEIPT_MARKER && ! -L $RECEIPT_MARKER ]] || return 1
+  marker_digest=$(<"$RECEIPT_MARKER")
+  receipt_digest=$(sha256sum "$RECEIPT" | cut -d' ' -f1)
+  [[ $marker_digest == "$receipt_digest" && $marker_digest =~ ^[a-f0-9]{64}$ ]] || return 1
+  exec 9< "$RECEIPT"
+  IFS= read -r version <&9 || { exec 9<&-; return 1; }
+  [[ $version == 'git-init-v2-receipt-v1' ]] || { exec 9<&-; return 1; }
+  while IFS=$'\t' read -r disposition path hash <&9; do
+    [[ $disposition == CREATED && $path == "$want" && $hash =~ ^[a-f0-9]{64}$ ]] || continue
+    source=$(template_for "$path") || { exec 9<&-; return 1; }
+    if [[ -f $path && ! -L $path && $(sha256sum "$path" | cut -d' ' -f1) == "$hash" && $(sha256sum "$source" | cut -d' ' -f1) == "$hash" ]]; then exec 9<&-; return 0; fi
+  done
+  exec 9<&-
+  return 1
+}
+receipt_preserves() {
+  # A valid PRESERVED row records known user ownership.  It is deliberately
+  # independent of the current bytes, unlike CREATED rows.
+  local want=$1 version disposition path hash marker_digest receipt_digest
+  [[ -f $RECEIPT && ! -L $RECEIPT && -f $RECEIPT_MARKER && ! -L $RECEIPT_MARKER ]] || return 1
+  marker_digest=$(<"$RECEIPT_MARKER")
+  receipt_digest=$(sha256sum "$RECEIPT" | cut -d' ' -f1)
+  [[ $marker_digest == "$receipt_digest" && $marker_digest =~ ^[a-f0-9]{64}$ ]] || return 1
+  exec 9< "$RECEIPT"
+  IFS= read -r version <&9 || { exec 9<&-; return 1; }
+  [[ $version == 'git-init-v2-receipt-v1' ]] || { exec 9<&-; return 1; }
+  while IFS=$'\t' read -r disposition path hash <&9; do
+    [[ $disposition == PRESERVED && $path == "$want" && $hash == - ]] && { exec 9<&-; return 0; }
+  done
+  exec 9<&-
+  return 1
+}
+receipt_required() {
+  local hooks template metadata
+  [[ -e $RECEIPT || -L $RECEIPT || -e $RECEIPT_MARKER || -L $RECEIPT_MARKER ]] && return 0
+  hooks=$(git config --local --get core.hooksPath 2>/dev/null || true)
+  template=$(git config --local --get commit.template 2>/dev/null || true)
+  metadata=$(find .git -maxdepth 1 -name 'git-init-v2-*' -print -quit 2>/dev/null || true)
+  [[ $hooks == .githooks || $template == .gitmessage || -n $metadata ]]
+}
+check_receipt_integrity() {
+  local version disposition path hash extra source digest marker_digest receipt_digest count=0 seen="" want
+  (( EXISTING_REPO )) || return 0
+  if [[ ! -e $RECEIPT && ! -L $RECEIPT ]]; then
+    receipt_required && issue "$EXIT_CONFLICT" CONFLICT 'bootstrap receipt 缺失，拒絕將已初始化 repository 視為首次執行'
+    return 0
+  fi
+  if [[ ! -f $RECEIPT || -L $RECEIPT ]]; then
+    issue "$EXIT_CONFLICT" CONFLICT 'bootstrap receipt 非一般檔案或為 symlink，拒絕使用'
+    return 0
+  fi
+  if [[ ! -e $RECEIPT_MARKER && ! -L $RECEIPT_MARKER ]]; then
+    issue "$EXIT_CONFLICT" CONFLICT 'bootstrap receipt integrity marker 缺失；bootstrap state ambiguous/inconsistent，拒絕使用'
+    return 0
+  fi
+  if [[ ! -f $RECEIPT_MARKER || -L $RECEIPT_MARKER ]]; then
+    issue "$EXIT_CONFLICT" CONFLICT 'bootstrap receipt integrity marker 非一般檔案或為 symlink，拒絕使用'
+    return 0
+  fi
+  marker_digest=$(<"$RECEIPT_MARKER")
+  receipt_digest=$(sha256sum "$RECEIPT" | cut -d' ' -f1)
+  if [[ $marker_digest != "$receipt_digest" || ! $marker_digest =~ ^[a-f0-9]{64}$ ]]; then
+    issue "$EXIT_CONFLICT" CONFLICT 'bootstrap receipt integrity marker 不符，拒絕使用'
+    return 0
+  fi
+  exec 9< "$RECEIPT"
+  IFS= read -r version <&9 || true
+  if [[ $version != 'git-init-v2-receipt-v1' ]]; then
+    exec 9<&-
+    issue "$EXIT_CONFLICT" CONFLICT 'bootstrap receipt schema 未支援或格式錯誤，拒絕隱式升級'
+    return 0
+  fi
+  while IFS=$'\t' read -r disposition path hash extra <&9 || [[ -n $disposition || -n $path || -n $hash || -n $extra ]]; do
+    if [[ -z $disposition || -z $path || -n $extra || $seen == *"|$path|"* ]]; then
+      issue "$EXIT_CONFLICT" CONFLICT 'bootstrap receipt 格式錯誤或含重複 entry，拒絕使用'
+      return 0
+    fi
+    source=$(template_for "$path") || { issue "$EXIT_CONFLICT" CONFLICT 'bootstrap receipt 含未知 managed path，拒絕使用'; return 0; }
+    case $disposition in
+      CREATED)
+        [[ $hash =~ ^[a-f0-9]{64}$ ]] || { issue "$EXIT_CONFLICT" CONFLICT 'bootstrap receipt CREATED hash 格式錯誤，拒絕使用'; return 0; }
+        if [[ ! -f $path || -L $path ]]; then issue "$EXIT_CONFLICT" CONFLICT "receipt 已記錄為 CREATED 的 $path 缺失或為 symlink，不重建"; return 0; fi
+        digest=$(sha256sum "$path" | cut -d' ' -f1)
+        if [[ $digest != "$hash" || $(sha256sum "$source" | cut -d' ' -f1) != "$hash" ]]; then issue "$EXIT_CONFLICT" CONFLICT "receipt 已記錄為 CREATED 的 $path 已修改或 template version 不符，不覆寫"; return 0; fi
+        ;;
+      PRESERVED)
+        [[ $hash == - ]] || { issue "$EXIT_CONFLICT" CONFLICT 'bootstrap receipt PRESERVED entry 格式錯誤，拒絕使用'; return 0; }
+        [[ -f $path && ! -L $path ]] || { issue "$EXIT_CONFLICT" CONFLICT "receipt 已記錄為 PRESERVED 的 $path 缺失或非一般檔案，不從 template 重建"; return 0; }
+        ;;
+      *) issue "$EXIT_CONFLICT" CONFLICT 'bootstrap receipt disposition 未支援，拒絕使用'; return 0 ;;
+    esac
+    seen+="|$path|"; count=$((count + 1))
+  done
+  exec 9<&-
+  (( count == ${#MANAGED_PATHS[@]} )) || { issue "$EXIT_CONFLICT" CONFLICT 'bootstrap receipt 未列出全部 candidate path，拒絕使用'; return 0; }
+  for want in "${MANAGED_PATHS[@]}"; do
+    [[ $seen == *"|$want|"* ]] || { issue "$EXIT_CONFLICT" CONFLICT 'bootstrap receipt 不完整，拒絕使用'; return 0; }
+  done
+}
+path_in_mutation_scope() {
+  # A candidate itself, an ancestor that can change its type, or a descendant
+  # that means a candidate is not an ordinary file is bootstrap state.  This
+  # is classification only; receipt and type checks decide whether it blocks.
+  local path=$1 candidate
+  for candidate in "${MANAGED_PATHS[@]}"; do
+    [[ $path == "$candidate" || $path == "$candidate/"* || $candidate == "$path/"* ]] && return 0
+  done
+  return 1
+}
+classify_worktree() {
+  local s xy path dirty=0 scope=ordinary
+  s=$(git --no-optional-locks status --porcelain=v1 --untracked-files=all 2>/dev/null || true)
+  [[ -z $s ]] && { WORKTREE_STATUS=clean; WORKTREE_SCOPE=clean; ORIGINAL_CLEAN=1; return; }; ORIGINAL_CLEAN=0
+  while IFS= read -r s; do
+    xy=${s:0:2}; path=${s:3}
+    dirty=1
+    if path_in_mutation_scope "$path"; then
+      # A receipt can prove an exact PRESERVED candidate remains user-owned,
+      # or an unchanged CREATED candidate remains tool-owned.  Any other
+      # dirty mutation-scope path is untrusted on this invocation.
+      if receipt_preserves "$path" || { [[ $xy == '??' ]] && receipt_allows "$path"; }; then
+        [[ $scope == ordinary ]] && scope=bootstrap-trusted
+      else
+        scope=bootstrap-untrusted
+      fi
+    fi
+  done <<< "$s"
+  (( dirty )) && WORKTREE_STATUS=dirty || WORKTREE_STATUS=clean
+  WORKTREE_SCOPE=$scope
+}
+scan_file() {
+  local file=$1 rel=$2 size line
+  if [[ -L $file ]]; then
+    if [[ ! -e $file || $(readlink -f -- "$file" 2>/dev/null || true) != "$TARGET_DIR"/* ]]; then
+      issue "$EXIT_RISK" RISK "symlink 未掃描：$rel"
     else
-        cat > "$COMMIT_TEMPLATE" <<'EOF'
-type(scope): subject
-
-# 描述：
-# - why
-# - what
-
-# Footer (Optional)
-#
-# BREAKING CHANGE:
-
-# feat(auth): add JWT authentication
-#
-# Types:
-# feat     新功能
-# fix      修正 Bug
-# docs     文件
-# style    格式調整
-# refactor 重構
-# perf     效能改善
-# test     測試
-# build    建置
-# ci       CI/CD
-# chore    維護
-# revert   回復 Commit
-#
-# ------------------------------------------
-# Commit Subject first word
-# add		新增、加入 | 新增檔案、功能、方法、欄位等
-# register	註冊 | 將某個功能或物件註冊到系統中
-# update	更新 | 某個檔案更新時使用
-# implement	實作、實現 | 完成某個功能的實際邏輯
-# remove	移除、刪除 | 刪除功能、程式碼、設定
-# rename	重新命名、更名 | 修改名稱，不改功能
-# support	支援、新增支援 | 增加對某項功能或平台的支援
-EOF
+      issue "$EXIT_RISK" RISK "symlink 未掃描：$rel"
     fi
+    return
+  fi
+  [[ -r $file ]] || { issue "$EXIT_RISK" RISK "檔案無法讀取：$rel"; return; }
+  size=$(wc -c < "$file" 2>/dev/null) || { issue "$EXIT_RISK" RISK "檔案無法讀取：$rel"; return; }
+  if (( size > 1048576 )); then issue "$EXIT_RISK" RISK "大型檔案未掃描：$rel"; return; fi
+  if LC_ALL=C od -An -v -t x1 -- "$file" 2>/dev/null | grep -q '\<00\>'; then issue "$EXIT_RISK" RISK "二進位檔案未掃描：$rel"; return; fi
+  # 僅辨識規則與位置；不輸出該值、URL 或原始行。
+  if grep -Ein '(^|[[:space:]])(api[_-]?key|secret|token|password|authorization)[[:space:]]*[:=][[:space:]]*[^[:space:]#]{8,}|authorization:[[:space:]]*[^[:space:]]{8,}' -- "$file" >/dev/null 2>&1; then
+    line=$(grep -Ein -m1 '(^|[[:space:]])(api[_-]?key|secret|token|password|authorization)[[:space:]]*[:=][[:space:]]*[^[:space:]#]{8,}|authorization:[[:space:]]*[^[:space:]]{8,}' -- "$file" | cut -d: -f1); issue "$EXIT_RISK" RISK "疑似機密內容：$rel:$line（內容已遮蔽）"
+  fi
+  if grep -Ein '(-----BEGIN (RSA |OPENSSH )?PRIVATE KEY-----|\[REDACTED PRIVATE KEY\])' -- "$file" >/dev/null 2>&1; then
+    line=$(grep -Ein -m1 '(-----BEGIN (RSA |OPENSSH )?PRIVATE KEY-----|\[REDACTED PRIVATE KEY\])' -- "$file" | cut -d: -f1); issue "$EXIT_RISK" RISK "私鑰標頭：$rel:$line（內容已遮蔽）"
+  fi
+  if grep -Ein 'https?://[^[:space:]@/]+:[^[:space:]@/]+@[^[:space:]/]+' -- "$file" >/dev/null 2>&1; then
+    line=$(grep -Ein -m1 'https?://[^[:space:]@/]+:[^[:space:]@/]+@[^[:space:]/]+' -- "$file" | cut -d: -f1); issue "$EXIT_RISK" RISK "含認證 URL：$rel:$line（內容已遮蔽）"
+  fi
+}
+secret_scan() {
+  local file rel base
+  while IFS= read -r -d '' file; do
+    rel=${file#./}; base=${rel##*/}
+    if [[ $base =~ ^\.env($|\.) || $base =~ (credential|secret|private.*key|id_rsa|\.pem$|\.key$|\.p12$|\.sqlite$|\.sql$) ]]; then
+      issue "$EXIT_RISK" RISK "疑似機密檔名：$rel"
+    fi
+    scan_file "$file" "$rel"
+  done < <(find . -path ./.git -prune -o -type f -print0 -o -type l -print0)
+}
+check_repository() {
+  local gitdir status ref remote name email nested
+  if [[ -L .git ]]; then issue "$EXIT_RISK" RISK '.git 是 symlink，拒絕寫入'; return; fi
+  if [[ -f .git ]]; then issue "$EXIT_CONFLICT" CONFLICT '.git gitfile/worktree，僅提供唯讀盤點'; return; fi
+  if [[ -d .git ]]; then
+    EXISTING_REPO=1
+    if git rev-parse --is-bare-repository 2>/dev/null | grep -qx true; then issue "$EXIT_CONFLICT" CONFLICT 'bare repository，僅提供唯讀盤點'; fi
+    gitdir=$(git rev-parse --git-dir 2>/dev/null || true)
+    [[ $gitdir != .git ]] && issue "$EXIT_CONFLICT" CONFLICT '外部 git directory，拒絕寫入'
+    classify_worktree
+    git rev-parse --verify HEAD >/dev/null 2>&1 && HAS_HEAD=1 || true
+    name=$(git config --local --get user.name 2>/dev/null || true); LOCAL_NAME=$name
+    email=$(git config --local --get user.email 2>/dev/null || true); LOCAL_EMAIL=$email
+  elif contains_source; then
+    [[ -f .gitignore ]] || issue "$EXIT_BLOCKER" BLOCKER '非空目錄缺少 .gitignore；僅列候選，不自動建立'
+  fi
+  nested=$(find . -mindepth 2 -type d -name .git -print -quit 2>/dev/null || true)
+  [[ -n $nested ]] && issue "$EXIT_CONFLICT" CONFLICT "偵測 nested repository：${nested#./}"
+  return 0
+}
+report_identity_field() {
+  local label=$1 value=$2
+  [[ -n $value ]] && say "$label: set (redacted)" || say "$label: unset"
+}
+report_path() {
+  local value=$1 base=$2
+  case $value in
+    /*) printf '%s\n' "$value" ;;
+    '~') printf '%s\n' "${HOME:-}/" ;;
+    '~/'*) printf '%s\n' "${HOME:-}/${value#~/}" ;;
+    *) printf '%s\n' "$base/$value" ;;
+  esac
+}
+render_preflight_report() {
+  local global_name="" global_email="" branch="" hooks_value="" hooks_path="" template_value="" template_path="" remote_count=0 remote_name remote_url risk_count=0 item
+  if (( ! HAVE_GIT )); then
+    say 'GIT_REPOSITORY: unavailable'; say 'CURRENT_BRANCH: unavailable'; say 'WORKTREE_STATUS: NO_REPO'; say 'REMOTES: unavailable'
+    say 'LOCAL_IDENTITY: unavailable'; say 'Local Git user.name: unavailable'; say 'Local Git user.email: unavailable'
+    say 'GLOBAL_IDENTITY: unavailable'; say 'Global Git user.name: unavailable'; say 'Global Git user.email: unavailable'
+    say 'HOOKS: unavailable'; say 'COMMIT_TEMPLATE: unavailable'
+  elif (( ! EXISTING_REPO )); then
+    say 'GIT_REPOSITORY: no'; say 'CURRENT_BRANCH: none; state=unavailable'; say 'WORKTREE_STATUS: NO_REPO'; say 'REMOTES: none'
+    say 'LOCAL_IDENTITY: unset'; say 'Local Git user.name: unset'; say 'Local Git user.email: unset'
+    global_name=$(git config --global --get user.name 2>/dev/null || true); global_email=$(git config --global --get user.email 2>/dev/null || true)
+    [[ -n $global_name || -n $global_email ]] && say 'GLOBAL_IDENTITY: present (redacted)' || say 'GLOBAL_IDENTITY: unset'
+    report_identity_field 'Global Git user.name' "$global_name"; report_identity_field 'Global Git user.email' "$global_email"
+    say 'HOOKS: unavailable (not a Git repository)'; say 'COMMIT_TEMPLATE: unavailable (not a Git repository)'
+  else
+    say 'GIT_REPOSITORY: yes'
+    branch=$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+    if (( HAS_HEAD )); then [[ -n $branch ]] && say "CURRENT_BRANCH: $branch; state=existing" || say 'CURRENT_BRANCH: none; state=existing'; else [[ -n $branch ]] && say "CURRENT_BRANCH: $branch; state=unborn" || say 'CURRENT_BRANCH: none; state=unborn'; fi
+    [[ $WORKTREE_STATUS == unknown-dirty ]] && say 'WORKTREE_STATUS: dirty' || say "WORKTREE_STATUS: $WORKTREE_STATUS"
+    while IFS=$'\t' read -r remote_name remote_url; do [[ -n $remote_name ]] || continue; remote_count=$((remote_count + 1)); say "REMOTE: $remote_name $(redact_url "$remote_url")"; done < <(git remote -v 2>/dev/null | awk '$3 == "(fetch)" {print $1 "\t" $2}')
+    (( remote_count )) && say "REMOTES: $remote_count" || say 'REMOTES: none'
+    [[ -n $LOCAL_NAME || -n $LOCAL_EMAIL ]] && say 'LOCAL_IDENTITY: present (redacted)' || say 'LOCAL_IDENTITY: unset'
+    report_identity_field 'Local Git user.name' "$LOCAL_NAME"; report_identity_field 'Local Git user.email' "$LOCAL_EMAIL"
+    global_name=$(git config --global --get user.name 2>/dev/null || true); global_email=$(git config --global --get user.email 2>/dev/null || true)
+    [[ -n $global_name || -n $global_email ]] && say 'GLOBAL_IDENTITY: present (redacted)' || say 'GLOBAL_IDENTITY: unset'
+    report_identity_field 'Global Git user.name' "$global_name"; report_identity_field 'Global Git user.email' "$global_email"
+    hooks_value=$(git config --get core.hooksPath 2>/dev/null || true)
+    if [[ -n $hooks_value ]]; then hooks_path=$(report_path "$hooks_value" "$TARGET_DIR"); [[ -d $hooks_path ]] && say 'HOOKS: hooksPath configured; effective path present' || say 'HOOKS: hooksPath configured; effective path absent'; else hooks_path=$(git rev-parse --git-path hooks 2>/dev/null || true); [[ -d $hooks_path ]] && say 'HOOKS: hooksPath not configured; effective path present' || say 'HOOKS: hooksPath not configured; effective path absent'; fi
+    if [[ -f $hooks_path/commit-msg ]]; then [[ -x $hooks_path/commit-msg ]] && say 'HOOK_COMMIT_MSG: present; executable' || say 'HOOK_COMMIT_MSG: present; not executable'; else say 'HOOK_COMMIT_MSG: absent'; fi
+    template_value=$(git config --get commit.template 2>/dev/null || true)
+    if [[ -n $template_value ]]; then template_path=$(report_path "$template_value" "$TARGET_DIR"); [[ -f $template_path ]] && say 'COMMIT_TEMPLATE: configured; file present' || say 'COMMIT_TEMPLATE: configured; file absent'; else say 'COMMIT_TEMPLATE: not configured; file absent'; fi
+  fi
+  [[ -e .gitignore ]] && say 'GITIGNORE: present' || say 'GITIGNORE: absent'
+  [[ -x node_modules/.bin/commitlint ]] && say 'COMMITLINT: executable available' || say 'COMMITLINT: executable unavailable'
+  [[ -e commitlint.config.cjs ]] && say 'COMMITLINT_CONFIG: present' || say 'COMMITLINT_CONFIG: absent'
+  command -v gh >/dev/null 2>&1 && say 'GH: available' || say 'GH: unavailable'
+  say 'GITHUB_AUTH: UNKNOWN (offline; authentication not tested)'
+  for item in "${ISSUES[@]}"; do
+    if [[ $item == RISK:* ]]; then risk_count=$((risk_count + 1)); fi
+  done
+  (( risk_count )) && say "RISK_SUMMARY: $risk_count risk(s) detected by current rules (RISK)" || say 'RISK_SUMMARY: none detected by current rules'
+}
+resolve_identity() {
+  if (( EXISTING_REPO )); then
+    if valid_text "$LOCAL_NAME"; then EFFECTIVE_NAME=$LOCAL_NAME; else EFFECTIVE_NAME=$USER_NAME; fi
+    if valid_email "$LOCAL_EMAIL"; then EFFECTIVE_EMAIL=$LOCAL_EMAIL; else EFFECTIVE_EMAIL=$USER_EMAIL; fi
+    valid_text "$LOCAL_NAME" && [[ -n $USER_NAME && $USER_NAME != "$LOCAL_NAME" ]] && say 'INIT_IDENTITY: 使用 existing local user.name；忽略不同 CLI 值'
+    valid_email "$LOCAL_EMAIL" && [[ -n $USER_EMAIL && $USER_EMAIL != "$LOCAL_EMAIL" ]] && say 'INIT_IDENTITY: 使用 existing local user.email；忽略不同 CLI 值'
+  else
+    EFFECTIVE_NAME=$USER_NAME; EFFECTIVE_EMAIL=$USER_EMAIL
+  fi
+  if ! valid_text "$EFFECTIVE_NAME" || ! valid_email "$EFFECTIVE_EMAIL"; then
+    say 'INIT_IDENTITY_BLOCKER: 缺少有效 local identity；global identity 僅供唯讀盤點，不會複製'
+    [[ $MODE == init ]] && issue "$EXIT_USAGE" BLOCKER '缺少有效 identity；請明確提供缺少欄位'
+  fi
+  return 0
+}
+check_managed() {
+  # Without a receipt every existing candidate remains user-owned, even if
+  # byte-identical to its template.  Receipt integrity validates only CREATED
+  # rows; PRESERVED rows deliberately have no template-content contract.
+  local path
+  if [[ -e .githooks || -L .githooks ]]; then
+    if [[ -L .githooks ]]; then
+      issue "$EXIT_RISK" RISK '.githooks 是 symlink，拒絕跟隨'
+    elif [[ ! -d .githooks ]]; then
+      issue "$EXIT_CONFLICT" CONFLICT '.githooks 非目錄；拒絕建立或採用 candidate descendant'
+    fi
+  fi
+  for path in .gitmessage commitlint.config.cjs AI-WORKFLOW.template.md .githooks/commit-msg .gitignore; do
+    [[ -e $path || -L $path ]] || continue
+    if [[ -L $path ]]; then
+      issue "$EXIT_RISK" RISK "$path 是 symlink，拒絕跟隨"
+    elif [[ ! -f $path ]]; then
+      issue "$EXIT_CONFLICT" CONFLICT "$path 非一般檔案；拒絕建立、採用或覆寫 candidate"
+    fi
+  done
+  if (( EXISTING_REPO )); then
+    local value
+    value=$(git config --local --get core.hooksPath 2>/dev/null || true)
+    [[ -n $value && $value != .githooks ]] && issue "$EXIT_CONFLICT" CONFLICT "local core.hooksPath 已為不同值：$value"
+    value=$(git config --local --get commit.template 2>/dev/null || true)
+    [[ -n $value && $value != .gitmessage ]] && issue "$EXIT_CONFLICT" CONFLICT "local commit.template 已為不同值：$value"
+  fi
+  return 0
+}
+check_branch_plan() {
+  local branch baseline found
+  (( EXISTING_REPO && HAS_HEAD )) || { say 'BRANCH_CREATION_DEFERRED: 尚無 baseline commit'; return; }
+  baseline=$(git rev-parse HEAD)
+  for branch in docs develop feat; do
+    found=$(git rev-parse --verify "refs/heads/$branch" 2>/dev/null || true)
+    if [[ -n $found ]]; then
+      [[ $found == "$baseline" ]] && say "BRANCH_SATISFIED: $branch 已指向 baseline HEAD，保持不變" || issue "$EXIT_CONFLICT" CONFLICT "branch $branch 未指向目前 baseline HEAD，拒絕移動既有 ref"
+    elif git for-each-ref --format='%(refname)' "refs/heads/$branch/" | grep -q .; then
+      issue "$EXIT_CONFLICT" CONFLICT "ref 名稱路徑衝突：refs/heads/$branch/*"
+    fi
+  done
+  return 0
+}
+preflight() {
+  say "TARGET: $TARGET_DIR"
+  command -v whoami >/dev/null 2>&1 && say "WHOAMI: $(whoami 2>/dev/null || printf unavailable)" || say 'WHOAMI: unavailable'
+  command -v hostname >/dev/null 2>&1 && say "HOSTNAME: $(hostname 2>/dev/null || printf unavailable)" || say 'HOSTNAME: unavailable'
+  command -v uname >/dev/null 2>&1 && { say "OS: $(uname -s 2>/dev/null || printf unavailable)"; say "ARCH: $(uname -m 2>/dev/null || printf unavailable)"; } || { say 'OS: unavailable'; say 'ARCH: unavailable'; }
+  say "CURRENT_DIRECTORY: $TARGET_DIR"
+  if command -v git >/dev/null 2>&1; then HAVE_GIT=1; say "GIT: $(git --version 2>/dev/null || printf unavailable)"; else say 'GIT: unavailable'; issue "$EXIT_BLOCKER" BLOCKER '找不到 git'; fi
+  say "NETWORK: OFFLINE_BY_DEFAULT"; say 'SANDBOX: UNKNOWN（須由 Work 確認）'
+  [[ $TARGET_DIR == *$'\n'* || $TARGET_DIR =~ [[:cntrl:]] ]] && issue "$EXIT_RISK" RISK '目錄路徑含控制字元'
+  [[ -w . ]] || issue "$EXIT_BLOCKER" BLOCKER '目錄不可寫'
+  (( HAVE_GIT )) && check_repository
+  (( HAVE_GIT )) && check_receipt_integrity
+  if (( EXISTING_REPO )) && [[ $WORKTREE_SCOPE == bootstrap-untrusted ]]; then
+    issue "$EXIT_CONFLICT" CONFLICT '原始工作樹含未受信任的 bootstrap candidate 或型別衝突；不初始化或採用 candidate files'
+  fi
+  resolve_identity
+  (( HAVE_GIT )) && check_managed
+  secret_scan
+  if (( EXISTING_REPO )); then check_branch_plan; fi
+  if [[ -n ${GH_TOKEN+x} ]]; then say 'GH_TOKEN_SIGNAL: PRESENT（未讀取值）'; else say 'GH_TOKEN_SIGNAL: ABSENT'; fi
+  render_preflight_report
+  if (( ISSUE_CODE == 0 )); then say 'PREFLIGHT_OK'; else say "PREFLIGHT_BLOCKED: $ISSUE_CODE"; fi
+}
+copy_atomic() {
+  local source=$1 target=$2 temp
+  mkdir -p -- "$(dirname -- "$target")"
+  temp="$(dirname -- "$target")/.git-init.$$.tmp"
+  cp -- "$source" "$temp" && mv -f -- "$temp" "$target"
+}
+record_mutation() { MUTATIONS+=("$1"); say "MUTATION: $1"; }
+record_candidate_dispositions() { local p; RECEIPT_DISPOSITIONS=(); for p in "${MANAGED_PATHS[@]}"; do if [[ -e $p || -L $p ]]; then RECEIPT_DISPOSITIONS+=("$p:PRESERVED"); else RECEIPT_DISPOSITIONS+=("$p:CREATED"); fi; done; }
+candidate_disposition() { local p=$1 entry; for entry in "${RECEIPT_DISPOSITIONS[@]}"; do [[ $entry == "$p:"* ]] && { printf '%s\n' "${entry#*:}"; return 0; }; done; return 1; }
+write_receipt() { local p disposition; [[ -e $RECEIPT || -L $RECEIPT ]] && return; (umask 077; printf '%s\n' 'git-init-v2-receipt-v1' > "$RECEIPT"; for p in "${MANAGED_PATHS[@]}"; do disposition=$(candidate_disposition "$p") || exit 1; if [[ $disposition == CREATED ]]; then printf 'CREATED\t%s\t%s\n' "$p" "$(sha256sum "$p" | cut -d' ' -f1)"; else printf 'PRESERVED\t%s\t-\n' "$p"; fi; done >> "$RECEIPT"); }
+write_receipt_marker() { [[ -e $RECEIPT_MARKER || -L $RECEIPT_MARKER ]] && return; (umask 077; sha256sum "$RECEIPT" | cut -d' ' -f1 > "$RECEIPT_MARKER"); }
+partial_failure() {
+  local rc=$?
+  (( rc == 0 )) && return
+  say "PARTIAL_INIT_FAILURE: 已完成步驟：${MUTATIONS[*]:-無}；未刪除 .git、未 reset/clean/checkout。請先 --check，再交 Work/James 審閱。"
+  exit "$EXIT_PARTIAL"
+}
+perform_init() {
+  trap partial_failure ERR
+  record_candidate_dispositions
+  if (( EXISTING_REPO == 0 )); then git init -b main; record_mutation 'git init -b main'; fi
+  [[ $(git config --local --get user.name 2>/dev/null || true) == "$EFFECTIVE_NAME" ]] || { git config --local user.name "$EFFECTIVE_NAME"; record_mutation '設定 local user.name'; }
+  [[ $(git config --local --get user.email 2>/dev/null || true) == "$EFFECTIVE_EMAIL" ]] || { git config --local user.email "$EFFECTIVE_EMAIL"; record_mutation '設定 local user.email'; }
+  [[ -e .gitmessage ]] || { copy_atomic "$SCRIPT_DIR/.gitmessage" .gitmessage; record_mutation '建立 .gitmessage'; }
+  [[ -e commitlint.config.cjs ]] || { copy_atomic "$SCRIPT_DIR/commitlint.config.cjs" commitlint.config.cjs; record_mutation '建立 commitlint.config.cjs'; }
+  [[ -e AI-WORKFLOW.template.md ]] || { copy_atomic "$SCRIPT_DIR/AI-WORKFLOW.template.md" AI-WORKFLOW.template.md; record_mutation '建立 AI-WORKFLOW.template.md'; }
+  [[ -e .githooks/commit-msg ]] || { copy_atomic "$SCRIPT_DIR/.githooks/commit-msg" .githooks/commit-msg; chmod 755 .githooks/commit-msg; record_mutation '建立 .githooks/commit-msg'; }
+  if [[ ! -e .gitignore ]]; then copy_atomic "$SCRIPT_DIR/.gitignore" .gitignore; record_mutation '建立候選 .gitignore（仍須 Work review）'; fi
+  [[ $(git config --local --get core.hooksPath 2>/dev/null || true) == .githooks ]] || { git config --local core.hooksPath .githooks; record_mutation '設定 local core.hooksPath'; }
+  [[ $(git config --local --get commit.template 2>/dev/null || true) == .gitmessage ]] || { git config --local commit.template .gitmessage; record_mutation '設定 local commit.template'; }
+  if (( EXISTING_REPO && HAS_HEAD )); then
+    local branch
+    for branch in docs develop feat; do git show-ref --verify --quiet "refs/heads/$branch" || { git branch "$branch" HEAD; record_mutation "建立 branch $branch"; }; done
+  else
+    say 'BRANCH_CREATION_DEFERRED: 需 James 批准 baseline local commit 後再明確重跑 --init'
+  fi
+  write_receipt
+  write_receipt_marker
+  say 'COMMITLINT_DEPENDENCY: BLOCKED（需 Work 以已批准的 project-local npm install 建立 node_modules；hook 在此前 fail closed）'
+  say 'INIT_COMPLETE: 未 add、commit、push、checkout 或改 global config'
+}
+
+while (($#)); do
+  case $1 in
+    --check) MODE=check ;;
+    --dry-run) MODE=dry-run ;;
+    --init) MODE=init ;;
+    --user-name) shift; (($#)) || { usage; exit "$EXIT_USAGE"; }; USER_NAME=$1 ;;
+    --user-email) shift; (($#)) || { usage; exit "$EXIT_USAGE"; }; USER_EMAIL=$1 ;;
+    --help|-h) usage; exit 0 ;;
+    *) usage; exit "$EXIT_USAGE" ;;
+  esac
+  shift
+done
+if [[ -n $USER_NAME ]] && ! valid_text "$USER_NAME" || [[ -n $USER_EMAIL ]] && ! valid_email "$USER_EMAIL"; then
+  say 'BLOCKER: CLI identity 含控制字元或 email 格式不合格'
+  exit "$EXIT_USAGE"
 fi
-
-git config --global commit.template "$COMMIT_TEMPLATE"
-
-if ! git config --global --get core.editor >/dev/null 2>&1; then
-    git config --global core.editor "vim"
-fi
-
-# 檢查是否已初始化 Git
-if [ -d ".git" ]; then
-    echo "❌ 此目錄已經是 Git Repository"
-    exit 1
-fi
-
-echo "▶ Initializing Git..."
-git init -b main
-
-echo "▶ Checking repository contents..."
-
-if [ -f .gitignore ]; then
-    echo "▶ Existing .gitignore found. Keeping the current file."
-elif [ -n "$(find . -mindepth 1 -maxdepth 1 ! -name .git -print -quit)" ]; then
-    echo "▶ Directory already contains files. Skipping .gitignore creation to preserve existing project contents."
-else
-    echo "▶ Creating .gitignore..."
-    cat > .gitignore <<'EOF'
-# -------------------------
-# OS
-# -------------------------
-.DS_Store
-Thumbs.db
-
-# -------------------------
-# IDE
-# -------------------------
-.vscode/
-.idea/
-
-# -------------------------
-# Logs
-# -------------------------
-*.log
-
-# -------------------------
-# Temp
-# -------------------------
-tmp/
-temp/
-
-# -------------------------
-# Composer
-# -------------------------
-vendor/
-
-# -------------------------
-# Node
-# -------------------------
-node_modules/
-npm-debug.log*
-
-# -------------------------
-# Environment
-# -------------------------
-.env
-.env.*
-
-# -------------------------
-# Misc
-# -------------------------
-*.swp
-*.swo
-EOF
-fi
-
-mkdir -p docs
-
-ensure_git_identity
-
-echo "▶ Creating first commit..."
-INITIAL_COMMIT_MSG="chore: initial commit"
-git add .
-git commit -m "$INITIAL_COMMIT_MSG"
-
-echo "▶ Creating development branches..."
-git branch develop
-git branch feat
-git branch docs
-git checkout feat
-
-echo
-echo "===================================="
-echo " Repository Created Successfully"
-echo "===================================="
-echo
-git branch
-
-echo
-echo "===================================="
-echo " git config --global --list"
-echo "===================================="
-echo
-git config --global --list
+preflight
+if (( ISSUE_CODE != 0 )); then exit "$ISSUE_CODE"; fi
+case $MODE in
+  check) exit 0 ;;
+  dry-run) say 'DRY_RUN: 將依 --init 建立 managed files、local config；不寫入。'; exit 0 ;;
+  init) perform_init ;;
+esac
