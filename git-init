@@ -237,15 +237,148 @@ scan_file() {
     line=$(grep -Ein -m1 'https?://[^[:space:]@/]+:[^[:space:]@/]+@[^[:space:]/]+' -- "$file" | cut -d: -f1); issue "$EXIT_RISK" RISK "含認證 URL：$rel:$line（內容已遮蔽）"
   fi
 }
+check_root_dependencies() {
+  [[ -e node_modules || -L node_modules ]] || return 0
+  if [[ -L node_modules || ! -d node_modules ]]; then
+    issue "$EXIT_RISK" RISK 'root node_modules 必須為 physical directory'
+    return
+  fi
+  if (( ! EXISTING_REPO )) || ! git check-ignore -q --no-index -- node_modules/; then
+    issue "$EXIT_RISK" RISK 'root node_modules 必須被 Git ignore'
+  fi
+  local tracked
+  if ! tracked=$(git ls-files -- node_modules 2>/dev/null); then
+    issue "$EXIT_RISK" RISK 'root node_modules tracked state 無法驗證'
+  elif [[ -n $tracked ]]; then
+    issue "$EXIT_RISK" RISK 'root node_modules 含 tracked contents'
+  fi
+  if ! command -v python3 >/dev/null 2>&1; then
+    issue "$EXIT_RISK" RISK 'dependency policy validator unavailable'
+    return
+  fi
+  local result
+  if ! result=$(python3 - <<'PY'
+import base64
+import json
+import os
+import re
+import stat
+from pathlib import Path
+from urllib.parse import urlsplit, unquote
+
+errors = set()
+root = Path('node_modules').resolve()
+high_risk = re.compile(r'^\.env|credential|secret|private.*key|id_rsa|\.pem$|\.key$|\.p12$|\.sqlite$|\.sql$', re.I)
+def walk_error(error):
+    errors.add('dependency traversal failed')
+for directory, dirs, files in os.walk(root, followlinks=False, onerror=walk_error):
+    for name in dirs + files:
+        path = Path(directory) / name
+        if high_risk.search(name):
+            errors.add('dependency high-risk filename')
+        try:
+            mode = path.lstat().st_mode
+            if stat.S_ISLNK(mode):
+                immediate = Path(os.path.abspath(path.parent / os.readlink(path)))
+                if not immediate.is_relative_to(root):
+                    errors.add('dependency symlink rejected')
+                target = path.resolve(strict=True)
+                if path.parent != root / '.bin' or not target.is_relative_to(root) or not target.is_file():
+                    errors.add('dependency symlink rejected')
+            elif not (stat.S_ISREG(mode) or stat.S_ISDIR(mode)):
+                errors.add('dependency special file rejected')
+        except (OSError, RuntimeError):
+            errors.add('dependency link or traversal failed')
+
+# SemVer 2.0: ASCII identifiers, nonempty dot components, no numeric
+# leading zeroes in core or prerelease; build numeric identifiers may have them.
+semver = re.compile(r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?')
+def exact_version(value):
+    return isinstance(value, str) and semver.fullmatch(value) is not None
+
+def load(path):
+    if path.is_symlink() or not path.is_file() or path.stat().st_size > 1048576:
+        raise ValueError()
+    def unique(pairs):
+        value = {}
+        for key, item in pairs:
+            if key in value:
+                raise ValueError()
+            value[key] = item
+        return value
+    return json.loads(path.read_text(), object_pairs_hook=unique)
+try:
+    manifest = load(Path('package.json'))
+    lock = load(Path('package-lock.json'))
+    if not isinstance(manifest, dict) or not isinstance(lock, dict) or type(lock.get('lockfileVersion')) is not int or lock['lockfileVersion'] not in (2, 3):
+        raise ValueError()
+    packages = lock['packages']
+    if not isinstance(packages, dict) or not isinstance(packages.get(''), dict):
+        raise ValueError()
+    for group in ('dependencies', 'devDependencies', 'optionalDependencies'):
+        direct = manifest.get(group, {})
+        if not isinstance(direct, dict) or packages[''].get(group, {}) != direct:
+            raise ValueError()
+        for name, version in direct.items():
+            if not isinstance(name, str) or not re.fullmatch(r'(?:@[a-zA-Z0-9_.-]+/)?[a-zA-Z0-9_.-]+', name) or not exact_version(version):
+                raise ValueError()
+            if packages.get('node_modules/' + name, {}).get('version') != version:
+                raise ValueError()
+    for name, metadata in packages.items():
+        if name == '':
+            continue
+        if not isinstance(name, str) or not name.startswith('node_modules/') or any(part in ('', '.', '..') for part in name.split('/')) or not isinstance(metadata, dict) or metadata.get('link') or not exact_version(metadata.get('version')):
+            raise ValueError()
+        resolved = metadata['resolved']
+        if not isinstance(resolved, str) or re.search(r'[\s\x00-\x1f\x7f]', resolved):
+            raise ValueError()
+        url = urlsplit(resolved)
+        authority = unquote(url.netloc)
+        port = url.port  # Raises ValueError for nonnumeric/out-of-range ports.
+        if url.netloc.endswith(':') or (port is not None and port == 0):
+            raise ValueError()
+        if url.scheme != 'https' or not url.hostname or '@' in authority or url.username is not None or url.password is not None or url.query or url.fragment:
+            raise ValueError()
+        integrity = metadata['integrity']
+        if not isinstance(integrity, str) or not integrity:
+            raise ValueError()
+        for token in integrity.split():
+            algorithm, encoded = token.split('-', 1)
+            if algorithm not in ('sha256', 'sha384', 'sha512'):
+                raise ValueError()
+            digest = base64.b64decode(encoded, validate=True)
+            if len(digest) != {'sha256': 32, 'sha384': 48, 'sha512': 64}[algorithm] or base64.b64encode(digest).decode() != encoded:
+                raise ValueError()
+except (OSError, ValueError, KeyError, TypeError, AttributeError):
+    errors.add('dependency manifest/lock metadata invalid')
+for error in sorted(errors):
+    print(error)
+PY
+); then
+    issue "$EXIT_RISK" RISK 'dependency policy validation failed'
+  elif [[ -n $result ]]; then
+    while IFS= read -r result; do issue "$EXIT_RISK" RISK "$result（內容已遮蔽）"; done <<< "$result"
+  fi
+}
 secret_scan() {
-  local file rel base
+  local file rel base discovery
+  if ! discovery=$(mktemp); then
+    issue "$EXIT_RISK" RISK 'generic scanner discovery unavailable'
+    return
+  fi
+  if ! find . \( -path ./.git -o -path ./node_modules \) -prune -o -type f -print0 -o -type l -print0 > "$discovery" 2>/dev/null; then
+    rm -f -- "$discovery"
+    issue "$EXIT_RISK" RISK 'generic scanner traversal failed（內容已遮蔽）'
+    return
+  fi
   while IFS= read -r -d '' file; do
     rel=${file#./}; base=${rel##*/}
-    if [[ $base =~ ^\.env($|\.) || $base =~ (credential|secret|private.*key|id_rsa|\.pem$|\.key$|\.p12$|\.sqlite$|\.sql$) ]]; then
+    if [[ $base =~ ^\.env || $base =~ (credential|secret|private.*key|id_rsa|\.pem$|\.key$|\.p12$|\.sqlite$|\.sql$) ]]; then
       issue "$EXIT_RISK" RISK "疑似機密檔名：$rel"
     fi
     scan_file "$file" "$rel"
-  done < <(find . -path ./.git -prune -o -type f -print0 -o -type l -print0)
+  done < "$discovery"
+  rm -f -- "$discovery"
 }
 check_repository() {
   local gitdir status ref remote name email nested
@@ -263,7 +396,9 @@ check_repository() {
   elif contains_source; then
     [[ -f .gitignore ]] || issue "$EXIT_BLOCKER" BLOCKER '非空目錄缺少 .gitignore；僅列候選，不自動建立'
   fi
-  nested=$(find . -mindepth 2 -type d -name .git -print -quit 2>/dev/null || true)
+  if ! nested=$(find . -mindepth 2 -type d -name .git -print -quit 2>/dev/null); then
+    issue "$EXIT_RISK" RISK 'repository traversal failed（內容已遮蔽）'
+  fi
   [[ -n $nested ]] && issue "$EXIT_CONFLICT" CONFLICT "偵測 nested repository：${nested#./}"
   return 0
 }
@@ -397,6 +532,7 @@ preflight() {
   fi
   resolve_identity
   (( HAVE_GIT )) && check_managed
+  check_root_dependencies
   secret_scan
   if (( EXISTING_REPO )); then check_branch_plan; fi
   if [[ -n ${GH_TOKEN+x} ]]; then say 'GH_TOKEN_SIGNAL: PRESENT（未讀取值）'; else say 'GH_TOKEN_SIGNAL: ABSENT'; fi

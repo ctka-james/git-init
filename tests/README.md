@@ -21,3 +21,24 @@ Fake private-key headers、credential URLs 與 token-like values 都是測試資
 Fixture mechanism 只服務隔離測試，不得提供 production `--skip-secret-scan` 或 general scanner bypass。一般 project source 出現相同 pattern 時，`--init` 仍必須 BLOCK；把資料放進 `tests/fixtures` 或標記為 fake 不能繞過 scanner。
 
 Scanner PASS 只表示目前規則沒有偵測到風險，不代表 repository 絕對沒有 secrets。測試不得印出完整 credential、token 或 private-key value。
+
+`run.sh` 同時執行 `dependencies.py`，使用 isolated Git/index/global config fixtures，
+涵蓋 root physical/ignored/untracked policy、dependency content skip、high-risk filenames、
+internal `.bin` links 及 external/broken/cycle/other links、lock structure/direct versions/
+resolved authentication URLs/SRI metadata，並確認所有 BLOCK 模式無 mutation/no leak，
+及 ordinary/nested dependency scanner 維持 BLOCK。
+
+完整 regression commands：
+
+    bash -n git-init tests/run.sh tests/commitlint-real.sh
+    bash tests/run.sh
+    python3 tests/receipt.py
+    python3 tests/preflight.py
+    bash tests/commitlint-real.sh
+
+Dependency regressions also exercise `.envrc`/all `.env*` prefixes in both scanners,
+root transitive policy versus outside-root nested scanning, actual permission-denied
+traversal (requires an unprivileged user), and a fixture-local `find` returning partial
+output with failure. Strict SemVer core/prerelease/build boundaries and URL ports
+are covered. Every rejected check/dry-run/init compares files, directory modes,
+Git index/config/refs and bootstrap metadata before/after, and checks redaction.

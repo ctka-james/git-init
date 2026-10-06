@@ -91,3 +91,33 @@ James → ChatGPT Work（Supervisor / validation / permission gate）→ OpenCla
 ## Validation checkpoint
 
 目前 suites 僅驗證契約，不提供 commit/push 授權。consolidated checkpoint 即使全 PASS，也不是 git-init v2 Final E2E PASS；Existing Git/User-owned/Failure-path E2E、Final regression 與 James Human Acceptance 必須各自完成。
+
+## Approved root dependency scan policy
+
+僅 project root 的 `node_modules` 使用此專用 policy，沒有 CLI bypass。
+若該 path 存在，必須是 physical directory（不可 symlink／一般檔案），必須在既有
+Git repository 被 Git ignore，且 index 不可有該 path 或其 descendants 的 tracked
+contents；無法確認以上條件即 RISK/BLOCK。non-Git project 有 root dependencies 時
+亦 fail closed。工具不安裝、不改 ignore、不 untrack dependencies。
+
+Root dependency content 不走 generic content scanner（包含 binary、large files 與
+套件文件中的 secret-like examples），但整棵樹仍檢查 high-risk filenames，包含
+`.env*`、credential、secret、private key、id_rsa、pem/key/p12/sqlite/sql 等；
+大小寫不影響此專用檔名檢查。特殊檔案及 traversal errors 也 BLOCK。
+只有直接位於 physical `node_modules/.bin` 的 symlink，且完整解析後為 root
+`node_modules` 內 existing regular file，才接受。其他位置、directory target、
+external（即使在 project 內）、broken、cycle links 一律 BLOCK。
+不跟隨 dependency directory links。root `node_modules` 的所有 descendants（含 transitive `node_modules`）使用 dependency policy；
+root subtree 以外的 nested `node_modules` 與普通 source 仍走原有
+完整 generic scanner（任何 traversal error 均 fail closed）；測試資料沒有免掃描資格。
+
+存在 root dependencies 時，需要可用的 Python 3.9+ validator，以及 physical、可讀、
+不超過 1 MiB 的 `package.json`／`package-lock.json`。JSON 重複 keys、錯誤型別、
+缺少 packages/root entry 或非 lockfileVersion 2/3 均 BLOCK。manifest 的
+ dependencies/devDependencies/optionalDependencies 必須與 lock root 完全一致；
+直接 dependency 必須 pin exact SemVer 2.0 version（core/prerelease numeric identifiers 不可有 leading zero） 並與對應 package entry version
+一致。每個非 root package entry 必須是 node_modules 內合法 path、非 link entry，
+含 exact SemVer 2.0 version、HTTPS resolved URL（port 若存在須為 1–65535）（無 userinfo，包括 encoded userinfo；無 query、
+fragment 或控制字元）及有效 sha256/sha384/sha512 SRI base64 digest，長度需符合
+演算法。無法讀取或驗證即 BLOCK，輸出僅 risk category，不印 metadata／credential。
+此驗證檢查 metadata 結構，不驗證 downloaded bytes 或 registry provenance。

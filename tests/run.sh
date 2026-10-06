@@ -82,3 +82,5 @@ after=$(cksum "$GIT_CONFIG_GLOBAL")
 
 printf 'RESULT: %d passed, %d failed\n' "$PASS" "$FAIL"
 (( FAIL == 0 )) || exit 10
+
+python3 "$ROOT/tests/dependencies.py"

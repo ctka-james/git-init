@@ -50,7 +50,7 @@
 - global identity 與 local identity 分開唯讀回報；不讀出 token 值，不修改 global config。
 - 不執行 `gh auth status`；offline 時 authentication 永遠是 `UNKNOWN`。
 - remote URL 不顯示 userinfo、query 或 fragment。
-- scanner 不輸出疑似 secret 的內容；它不是安全保證。疑似值、疑似檔名、二進位檔案、大於 1 MiB 的檔案、symlink 或掃描錯誤均會阻擋 `--init`。
+- scanner 不輸出疑似 secret 的內容；它不是安全保證。疑似值、疑似檔名、二進位檔案、大於 1 MiB 的檔案、symlink（下述 root dependency `.bin` 例外除外）或掃描錯誤均會阻擋 `--init`。
 - `.git` gitfile/worktree、bare repo、`.git` symlink 與 nested repo 一律僅唯讀說明，不寫外部 Git directory。
 
 `.gitignore` 已存在時永不變動。非空 non-Git 目錄缺少它會阻擋；空目錄的 `--init` 可產生下列候選，仍必須由 Work review，且不代表 staging 或提交授權：
@@ -134,3 +134,33 @@ Hook 只會呼叫 `./node_modules/.bin/commitlint --config ./commitlint.config.c
 ## Breaking changes
 
 v2 刻意移除舊版自動 global npm install、global Git config、identity prompt、`.gitignore` 覆寫、auto add/commit/checkout、baseline 前 branch 建立及全域 hook/template/editor 行為。已依賴 global hooks 的專案不會被自動遷移。這些改變是安全邊界，不是回歸缺陷。
+
+## Approved root dependency scan policy
+
+僅 project root 的 `node_modules` 使用此專用 policy，沒有 CLI bypass。
+若該 path 存在，必須是 physical directory（不可 symlink／一般檔案），必須在既有
+Git repository 被 Git ignore，且 index 不可有該 path 或其 descendants 的 tracked
+contents；無法確認以上條件即 RISK/BLOCK。non-Git project 有 root dependencies 時
+亦 fail closed。工具不安裝、不改 ignore、不 untrack dependencies。
+
+Root dependency content 不走 generic content scanner（包含 binary、large files 與
+套件文件中的 secret-like examples），但整棵樹仍檢查 high-risk filenames，包含
+`.env*`、credential、secret、private key、id_rsa、pem/key/p12/sqlite/sql 等；
+大小寫不影響此專用檔名檢查。特殊檔案及 traversal errors 也 BLOCK。
+只有直接位於 physical `node_modules/.bin` 的 symlink，且完整解析後為 root
+`node_modules` 內 existing regular file，才接受。其他位置、directory target、
+external（即使在 project 內）、broken、cycle links 一律 BLOCK。
+不跟隨 dependency directory links。root `node_modules` 的所有 descendants（含 transitive `node_modules`）使用 dependency policy；
+root subtree 以外的 nested `node_modules` 與普通 source 仍走原有
+完整 generic scanner（任何 traversal error 均 fail closed）；測試資料沒有免掃描資格。
+
+存在 root dependencies 時，需要可用的 Python 3.9+ validator，以及 physical、可讀、
+不超過 1 MiB 的 `package.json`／`package-lock.json`。JSON 重複 keys、錯誤型別、
+缺少 packages/root entry 或非 lockfileVersion 2/3 均 BLOCK。manifest 的
+ dependencies/devDependencies/optionalDependencies 必須與 lock root 完全一致；
+直接 dependency 必須 pin exact SemVer 2.0 version（core/prerelease numeric identifiers 不可有 leading zero） 並與對應 package entry version
+一致。每個非 root package entry 必須是 node_modules 內合法 path、非 link entry，
+含 exact SemVer 2.0 version、HTTPS resolved URL（port 若存在須為 1–65535）（無 userinfo，包括 encoded userinfo；無 query、
+fragment 或控制字元）及有效 sha256/sha384/sha512 SRI base64 digest，長度需符合
+演算法。無法讀取或驗證即 BLOCK，輸出僅 risk category，不印 metadata／credential。
+此驗證檢查 metadata 結構，不驗證 downloaded bytes 或 registry provenance。
