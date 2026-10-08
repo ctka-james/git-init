@@ -22,6 +22,7 @@ EFFECTIVE_EMAIL=""
 WORKTREE_STATUS=NO_REPO
 WORKTREE_SCOPE=none
 RECEIPT_DISPOSITIONS=()
+VENDOR_VALID=0
 readonly RECEIPT=.git/git-init-v2-receipt
 readonly RECEIPT_MARKER=.git/git-init-v2-receipt.sha256
 readonly MANAGED_PATHS=(.gitmessage commitlint.config.cjs AI-WORKFLOW.template.md .githooks/commit-msg .gitignore)
@@ -227,8 +228,11 @@ scan_file() {
   if (( size > 1048576 )); then issue "$EXIT_RISK" RISK "大型檔案未掃描：$rel"; return; fi
   if LC_ALL=C od -An -v -t x1 -- "$file" 2>/dev/null | grep -q '\<00\>'; then issue "$EXIT_RISK" RISK "二進位檔案未掃描：$rel"; return; fi
   # 僅辨識規則與位置；不輸出該值、URL 或原始行。
-  if grep -Ein '(^|[[:space:]])(api[_-]?key|secret|token|password|authorization)[[:space:]]*[:=][[:space:]]*[^[:space:]#]{8,}|authorization:[[:space:]]*[^[:space:]]{8,}' -- "$file" >/dev/null 2>&1; then
-    line=$(grep -Ein -m1 '(^|[[:space:]])(api[_-]?key|secret|token|password|authorization)[[:space:]]*[:=][[:space:]]*[^[:space:]#]{8,}|authorization:[[:space:]]*[^[:space:]]{8,}' -- "$file" | cut -d: -f1); issue "$EXIT_RISK" RISK "疑似機密內容：$rel:$line（內容已遮蔽）"
+  local secret_pattern='(^|[[:space:]])(api[_-]?key|secret|token|password|authorization)[[:space:]]*[:=][[:space:]]*[^[:space:]#]{8,}|'
+  secret_pattern+='authorization'
+  secret_pattern+=':[[:space:]]*[^[:space:]]{8,}'
+  if grep -Ein "$secret_pattern" -- "$file" >/dev/null 2>&1; then
+    line=$(grep -Ein -m1 "$secret_pattern" -- "$file" | cut -d: -f1); issue "$EXIT_RISK" RISK "疑似機密內容：$rel:$line（內容已遮蔽）"
   fi
   if grep -Ein '(-----BEGIN (RSA |OPENSSH )?PRIVATE KEY-----|\[REDACTED PRIVATE KEY\])' -- "$file" >/dev/null 2>&1; then
     line=$(grep -Ein -m1 '(-----BEGIN (RSA |OPENSSH )?PRIVATE KEY-----|\[REDACTED PRIVATE KEY\])' -- "$file" | cut -d: -f1); issue "$EXIT_RISK" RISK "私鑰標頭：$rel:$line（內容已遮蔽）"
@@ -360,13 +364,207 @@ PY
     while IFS= read -r result; do issue "$EXIT_RISK" RISK "$result（內容已遮蔽）"; done <<< "$result"
   fi
 }
+check_root_vendor() {
+  [[ -e vendor || -L vendor ]] || return 0
+  local result tracked valid=1
+  if [[ -L vendor || ! -d vendor ]]; then
+    issue "$EXIT_RISK" RISK 'root vendor 必須為 physical directory'
+    return
+  fi
+  if (( ! EXISTING_REPO )) || ! git check-ignore -q --no-index -- vendor/; then
+    issue "$EXIT_RISK" RISK 'root vendor 必須被 Git ignore'; valid=0
+  fi
+  if ! tracked=$(git ls-files -- vendor 2>/dev/null) || [[ -n $tracked ]]; then
+    issue "$EXIT_RISK" RISK 'root vendor tracked state rejected'; valid=0
+  fi
+  if ! command -v python3 >/dev/null 2>&1; then
+    issue "$EXIT_RISK" RISK 'vendor policy validator unavailable'; return
+  fi
+  if ! result=$(python3 - <<'PYV'
+import json, os, re, stat
+from pathlib import Path
+errors = set()
+root = Path('vendor').resolve()
+high = re.compile(r'^\.env|credential|secret|private.*key|id_rsa|\.pem$|\.key$|\.p12$|\.sqlite$|\.sql$', re.I)
+for directory, dirs, files in os.walk(root, followlinks=False, onerror=lambda e: errors.add('vendor traversal failed')):
+    for name in dirs + files:
+        path = Path(directory) / name
+        if high.search(name): errors.add('vendor high-risk filename')
+        try:
+            mode = path.lstat().st_mode
+            if stat.S_ISLNK(mode): errors.add('vendor symlink rejected')
+            elif not (stat.S_ISDIR(mode) or stat.S_ISREG(mode)): errors.add('vendor special file rejected')
+        except OSError: errors.add('vendor traversal failed')
+def read(path):
+    # Check every ancestor, not just the metadata leaf.
+    for parent in (path, *path.parents):
+        if parent.is_symlink(): raise ValueError()
+    if not path.is_file() or path.stat().st_size > 1048576: raise ValueError()
+    return path.read_text()
+def unique(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result: raise ValueError()
+        result[key] = value
+    return result
+# Parse only Composer's declarative generated array syntax. Never execute PHP.
+def php(text):
+    pattern = r"\s*(<\?php|=>|array\b|return\b|dirname\b|__DIR__|true\b|false\b|null\b|-?[0-9]+|'(?:\\.|[^'\\])*'|[\[\](),;.])"
+    tokens = []; pos = 0
+    while text[pos:].strip():
+        comment = re.match(r'\s*(?:/\*.*?\*/|//[^\n]*)', text[pos:], re.S)
+        if comment:
+            pos += comment.end(); continue
+        m = re.match(pattern, text[pos:])
+        if not m: raise ValueError()
+        tokens.append(m[1]); pos += m.end()
+    i = 0
+    def take(want=None):
+        nonlocal i
+        t = tokens[i]; i += 1
+        if want is not None and t != want: raise ValueError()
+        return t
+    def value():
+        t = take()
+        if t in ('array', '['):
+            end = ')' if t == 'array' else ']'
+            if t == 'array': take('(')
+            result = {}; n = 0
+            while tokens[i] != end:
+                k = value()
+                if tokens[i] == '=>':
+                    take(); v = value()
+                else: k, v = n, k; n += 1
+                if k in result: raise ValueError()
+                result[k] = v
+                if tokens[i] != end: take(',')
+            take(end); return result
+        if t.startswith("'"): v = t[1:-1].replace("\\'", "'").replace('\\\\', '\\')
+        elif t == '__DIR__': v = str(root / 'composer')
+        elif t == 'dirname':
+            take('('); v = value(); take(')'); v = str(Path(v).parent)
+        elif t in ('true', 'false', 'null'): v = {'true': True, 'false': False, 'null': None}[t]
+        elif re.fullmatch('-?[0-9]+', t): v = int(t)
+        else: raise ValueError()
+        if i < len(tokens) and tokens[i] == '.': take(); v += value()
+        return v
+    take('<?php'); take('return'); result = value(); take(';')
+    if i != len(tokens): raise ValueError()
+    return result
+class ReferenceTypeError(ValueError):
+    pass
+
+def validate_reference_types(items):
+    for item in items.values():
+        for kind in ('source', 'dist'):
+            value = item.get(kind, {}).get('reference')
+            if value is not None and not isinstance(value, str):
+                raise ReferenceTypeError()
+
+class NormalizedVersionError(ValueError):
+    pass
+
+def validate_normalized_version(value):
+    # Custom output policy, corpus-verified against pinned composer/semver 3.4.4.
+    # This is not claimed equivalent to the upstream parser.
+    # Classical outputs have four parts; date outputs preserve numeric grouping.
+    # Branch outputs use four unrestricted numeric parts or an arbitrary dev- name.
+    if not isinstance(value, str) or not value or value != value.strip() or re.search(r'[\x00-\x1f\x7f]', value):
+        raise NormalizedVersionError()
+    if value.startswith('dev-') and len(value) > 4:
+        return
+    classical = r'[0-9]{1,5}(?:\.[0-9]+){3}'
+    date = r'[0-9]{4}(?:\.?[0-9]{2}){1,6}(?:\.?[0-9]{1,3}){0,2}'
+    modifier = r'(?:-(?:alpha|beta|RC|patch)(?:[0-9]+(?:[.-][0-9]+)*)?)?(?:-dev)?'
+    numeric_branch = r'[0-9]+(?:\.[0-9]+){3}-dev'
+    if value == '9999999-dev' or re.fullmatch(numeric_branch, value) or re.fullmatch('(?:' + classical + '|' + date + ')' + modifier, value):
+        return
+    raise NormalizedVersionError()
+
+def validate_normalized_fields(items):
+    for item in items.values():
+        if 'version_normalized' in item:
+            validate_normalized_version(item['version_normalized'])
+
+name_pattern = re.compile(r'[a-z0-9](?:[a-z0-9_.-]*[a-z0-9])?/[a-z0-9](?:[a-z0-9_.-]*[a-z0-9])?')
+def packages(items):
+    if not isinstance(items, list): raise ValueError()
+    result = {}
+    for item in items:
+        name = item['name']; version = item['version']
+        if not isinstance(name, str) or not name_pattern.fullmatch(name) or '..' in name or name in result or not isinstance(version, str) or not version or re.search(r'[\s\x00-\x1f]', version): raise ValueError()
+        result[name] = item
+    return result
+try:
+    lock = json.loads(read(Path('composer.lock')), object_pairs_hook=unique)
+    locked = packages(lock['packages']); dev = packages(lock['packages-dev'])
+    if set(locked) & set(dev): raise ValueError()
+    installed = json.loads(read(Path('vendor/composer/installed.json')), object_pairs_hook=unique)
+    if isinstance(installed, list): actual = packages(installed)
+    elif isinstance(installed, dict) and type(installed.get('dev')) is bool: actual = packages(installed['packages'])
+    else: raise ValueError()
+    expected = {**locked, **dev}
+    if set(actual) not in (set(locked), set(expected)): raise ValueError()
+    # Validate both JSON metadata sets before parsing PHP or selecting precedence.
+    validate_reference_types(expected)
+    validate_reference_types(actual)
+    validate_normalized_fields(expected)
+    validate_normalized_fields(actual)
+    data = php(read(Path('vendor/composer/installed.php')))
+    versions = data['versions']; project = data['root']['name']
+    if not isinstance(versions, dict) or not isinstance(project, str): raise ValueError()
+    if project in actual or set(versions) != set(actual) | {project}: raise ValueError()
+    for name, item in actual.items():
+        if item['version'] != expected[name]['version']: raise ValueError()
+        entry = versions[name]
+        validate_normalized_version(entry.get('version'))
+        if entry.get('pretty_version') != item['version']: raise ValueError()
+        if 'version_normalized' in expected[name]:
+            normalized = expected[name]['version_normalized']
+            if item.get('version_normalized') != normalized or entry.get('version') != normalized: raise ValueError()
+        if 'version_normalized' in item and entry.get('version') != item['version_normalized']: raise ValueError()
+        references = {}
+        for kind in ('source', 'dist'):
+            value = expected[name].get(kind, {}).get('reference')
+            references[kind] = value if value else None
+        reference = references['source'] or references['dist']
+        if entry['reference'] != reference: raise ValueError()
+        for kind in ('source', 'dist'):
+            if item.get(kind) != expected[name].get(kind): raise ValueError()
+        path = entry.get('install_path')
+        if expected[name].get('type') == 'metapackage':
+            if entry['install_path'] is not None or item['install-path'] is not None: raise ValueError()
+        else:
+            if not isinstance(path, str): raise ValueError()
+            target = Path(path).resolve(strict=True)
+            if not target.is_relative_to(root) or target == root or not target.is_dir(): raise ValueError()
+            jp = item.get('install-path')
+            if not isinstance(jp, str) or (root / 'composer' / jp).resolve(strict=True) != target: raise ValueError()
+except NormalizedVersionError:
+    errors.add('vendor Composer normalized version invalid')
+except ReferenceTypeError:
+    errors.add('vendor Composer reference type invalid')
+except (OSError, ValueError, KeyError, TypeError, AttributeError, IndexError, RuntimeError):
+    errors.add('vendor Composer metadata invalid')
+for error in sorted(errors): print(error)
+PYV
+); then
+    issue "$EXIT_RISK" RISK 'vendor policy validation failed'
+  elif [[ -n $result ]]; then
+    while IFS= read -r result; do issue "$EXIT_RISK" RISK "$result（內容已遮蔽）"; done <<< "$result"
+  elif (( valid )); then
+    VENDOR_VALID=1
+  fi
+}
 secret_scan() {
   local file rel base discovery
   if ! discovery=$(mktemp); then
     issue "$EXIT_RISK" RISK 'generic scanner discovery unavailable'
     return
   fi
-  if ! find . \( -path ./.git -o -path ./node_modules \) -prune -o -type f -print0 -o -type l -print0 > "$discovery" 2>/dev/null; then
+  local vendor_prune=./.git
+  (( VENDOR_VALID )) && vendor_prune=./vendor
+  if ! find . \( -path ./.git -o -path ./node_modules -o -path "$vendor_prune" \) -prune -o -type f -print0 -o -type l -print0 > "$discovery" 2>/dev/null; then
     rm -f -- "$discovery"
     issue "$EXIT_RISK" RISK 'generic scanner traversal failed（內容已遮蔽）'
     return
@@ -533,6 +731,7 @@ preflight() {
   resolve_identity
   (( HAVE_GIT )) && check_managed
   check_root_dependencies
+  check_root_vendor
   secret_scan
   if (( EXISTING_REPO )); then check_branch_plan; fi
   if [[ -n ${GH_TOKEN+x} ]]; then say 'GH_TOKEN_SIGNAL: PRESENT（未讀取值）'; else say 'GH_TOKEN_SIGNAL: ABSENT'; fi

@@ -1,0 +1,928 @@
+{
+  "source": {
+    "package": "composer/semver",
+    "version": "3.4.4",
+    "commit": "198166618906cb2de69b95d7d47e5fa8aa1b2b95",
+    "path": "tests/VersionParserTest.php",
+    "sha256": "3ad4d38753436d3508eb120b220f8f343f0308d13d4d8867921246aa125d6005",
+    "url": "https://raw.githubusercontent.com/composer/semver/198166618906cb2de69b95d7d47e5fa8aa1b2b95/tests/VersionParserTest.php"
+  },
+  "method": "Static complete labelled literal-pair extraction from both successful providers; comments excluded; no PHP execution.",
+  "counts": {
+    "successfulNormalizedVersions": 73,
+    "successfulNormalizedBranches": 13
+  },
+  "stable_source": {
+    "path": "src/VersionParser.php",
+    "sha256": "63311ae28a20ca266fb0d9599cbb39c60aed64f69aadc59052b34b9b32043e17",
+    "url": "https://raw.githubusercontent.com/composer/semver/198166618906cb2de69b95d7d47e5fa8aa1b2b95/src/VersionParser.php",
+    "lines": "154-159",
+    "input": "1.2.3.0-stable",
+    "output": "1.2.3.0",
+    "method": "Read normalize(): lowercase stable returns numeric base; source-derived pair, not a provider fixture."
+  },
+  "records": [
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "none",
+      "input": "1.0.0",
+      "output": "1.0.0.0"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "none/2",
+      "input": "1.2.3.4",
+      "output": "1.2.3.4"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "parses state",
+      "input": "1.0.0RC1dev",
+      "output": "1.0.0.0-RC1-dev"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "CI parsing",
+      "input": "1.0.0-rC15-dev",
+      "output": "1.0.0.0-RC15-dev"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "delimiters",
+      "input": "1.0.0.RC.15-dev",
+      "output": "1.0.0.0-RC15-dev"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "RC uppercase",
+      "input": "1.0.0-rc1",
+      "output": "1.0.0.0-RC1"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "patch replace",
+      "input": "1.0.0.pl3-dev",
+      "output": "1.0.0.0-patch3-dev"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "forces w.x.y.z",
+      "input": "1.0-dev",
+      "output": "1.0.0.0-dev"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "forces w.x.y.z/2",
+      "input": "0",
+      "output": "0.0.0.0"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "forces w.x.y.z/maximum major",
+      "input": "99999",
+      "output": "99999.0.0.0"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "parses long",
+      "input": "10.4.13-beta",
+      "output": "10.4.13.0-beta"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "parses long/2",
+      "input": "10.4.13beta2",
+      "output": "10.4.13.0-beta2"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "parses long/semver",
+      "input": "10.4.13beta.2",
+      "output": "10.4.13.0-beta2"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "parses long/semver2",
+      "input": "v1.13.11-beta.0",
+      "output": "1.13.11.0-beta0"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "parses long/semver3",
+      "input": "1.13.11.0-beta0",
+      "output": "1.13.11.0-beta0"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "expand shorthand",
+      "input": "10.4.13-b",
+      "output": "10.4.13.0-beta"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "expand shorthand/2",
+      "input": "10.4.13-b5",
+      "output": "10.4.13.0-beta5"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "strips leading v",
+      "input": "v1.0.0",
+      "output": "1.0.0.0"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "parses dates y-m as classical",
+      "input": "2010.01",
+      "output": "2010.01.0.0"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "parses dates w/ . as classical",
+      "input": "2010.01.02",
+      "output": "2010.01.02.0"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "parses dates y.m.Y as classical",
+      "input": "2010.1.555",
+      "output": "2010.1.555.0"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "parses dates y.m.Y/2 as classical",
+      "input": "2010.10.200",
+      "output": "2010.10.200.0"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "parses CalVer YYYYMMDD (as MAJOR) versions",
+      "input": "20230131.0.0",
+      "output": "20230131.0.0"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "parses CalVer YYYYMMDDhhmm (as MAJOR) versions",
+      "input": "202301310000.0.0",
+      "output": "202301310000.0.0"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "strips v/datetime",
+      "input": "v20100102",
+      "output": "20100102"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "parses dates no delimiter",
+      "input": "20100102",
+      "output": "20100102"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "parses dates no delimiter/2",
+      "input": "20100102.0",
+      "output": "20100102.0"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "parses dates no delimiter/3",
+      "input": "20100102.1.0",
+      "output": "20100102.1.0"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "parses dates no delimiter/4",
+      "input": "20100102.0.3",
+      "output": "20100102.0.3"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "parses dates no delimiter/earliest year",
+      "input": "100000",
+      "output": "100000"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "parses dates w/ - and .",
+      "input": "2010-01-02-10-20-30.0.3",
+      "output": "2010.01.02.10.20.30.0.3"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "parses dates w/ - and ./2",
+      "input": "2010-01-02-10-20-30.5",
+      "output": "2010.01.02.10.20.30.5"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "parses dates w/ -",
+      "input": "2010-01-02",
+      "output": "2010.01.02"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "parses dates w/ .",
+      "input": "2012.06.07",
+      "output": "2012.06.07.0"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "parses numbers",
+      "input": "2010-01-02.5",
+      "output": "2010.01.02.5"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "parses dates y.m.Y",
+      "input": "2010.1.555",
+      "output": "2010.1.555.0"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "parses datetime",
+      "input": "20100102-203040",
+      "output": "20100102.203040"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "parses date dev",
+      "input": "20100102.x-dev",
+      "output": "20100102.9999999.9999999.9999999-dev"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "parses datetime dev",
+      "input": "20100102.203040.x-dev",
+      "output": "20100102.203040.9999999.9999999-dev"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "parses dt+number",
+      "input": "20100102203040-10",
+      "output": "20100102203040.10"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "parses dt+patch",
+      "input": "20100102-203040-p1",
+      "output": "20100102.203040-patch1"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "parses dt Ym",
+      "input": "201903.0",
+      "output": "201903.0"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "parses dt Ym dev",
+      "input": "201903.x-dev",
+      "output": "201903.9999999.9999999.9999999-dev"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "parses dt Ym+patch",
+      "input": "201903.0-p2",
+      "output": "201903.0-patch2"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "parses master",
+      "input": "dev-master",
+      "output": "dev-master"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "parses master w/o dev",
+      "input": "master",
+      "output": "dev-master"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "parses trunk",
+      "input": "dev-trunk",
+      "output": "dev-trunk"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "parses branches",
+      "input": "1.x-dev",
+      "output": "1.9999999.9999999.9999999-dev"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "parses arbitrary",
+      "input": "dev-feature-foo",
+      "output": "dev-feature-foo"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "parses arbitrary/2",
+      "input": "DEV-FOOBAR",
+      "output": "dev-FOOBAR"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "parses arbitrary/3",
+      "input": "dev-feature/foo",
+      "output": "dev-feature/foo"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "parses arbitrary/4",
+      "input": "dev-feature+issue-1",
+      "output": "dev-feature+issue-1"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "ignores aliases",
+      "input": "dev-master as 1.0.0",
+      "output": "dev-master"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "ignores aliases/2",
+      "input": "dev-load-varnish-only-when-used as ^2.0",
+      "output": "dev-load-varnish-only-when-used"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "ignores aliases/3",
+      "input": "dev-load-varnish-only-when-used@dev as ^2.0@dev",
+      "output": "dev-load-varnish-only-when-used"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "ignores stability",
+      "input": "1.0.0+foo@dev",
+      "output": "1.0.0.0"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "ignores stability/2",
+      "input": "dev-load-varnish-only-when-used@stable",
+      "output": "dev-load-varnish-only-when-used"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "semver metadata/2",
+      "input": "1.0.0-beta.5+foo",
+      "output": "1.0.0.0-beta5"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "semver metadata/3",
+      "input": "1.0.0+foo",
+      "output": "1.0.0.0"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "semver metadata/4",
+      "input": "1.0.0-alpha.3.1+foo",
+      "output": "1.0.0.0-alpha3.1"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "semver metadata/5",
+      "input": "1.0.0-alpha2.1+foo",
+      "output": "1.0.0.0-alpha2.1"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "semver metadata/6",
+      "input": "1.0.0-alpha-2.1-3+foo",
+      "output": "1.0.0.0-alpha2.1-3"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "metadata w/ alias",
+      "input": "1.0.0+foo as 2.0",
+      "output": "1.0.0.0"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "keep zero-padding",
+      "input": "00.01.03.04",
+      "output": "00.01.03.04"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "keep zero-padding/2",
+      "input": "000.001.003.004",
+      "output": "000.001.003.004"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "keep zero-padding/3",
+      "input": "0.000.103.204",
+      "output": "0.000.103.204"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "keep zero-padding/4",
+      "input": "0700",
+      "output": "0700.0.0.0"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "keep zero-padding/5",
+      "input": "041.x-dev",
+      "output": "041.9999999.9999999.9999999-dev"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "keep zero-padding/6",
+      "input": "dev-041.003",
+      "output": "dev-041.003"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "dev with mad name",
+      "input": "dev-1.0.0-dev<1.0.5-dev",
+      "output": "dev-1.0.0-dev<1.0.5-dev"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "dev prefix with spaces",
+      "input": "dev-foo bar",
+      "output": "dev-foo bar"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "space padding",
+      "input": " 1.0.0",
+      "output": "1.0.0.0"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "space padding/2",
+      "input": "1.0.0 ",
+      "output": "1.0.0.0"
+    },
+    {
+      "provider": "successfulNormalizedBranches",
+      "label": "parses x",
+      "input": "v1.x",
+      "output": "1.9999999.9999999.9999999-dev"
+    },
+    {
+      "provider": "successfulNormalizedBranches",
+      "label": "parses *",
+      "input": "v1.*",
+      "output": "1.9999999.9999999.9999999-dev"
+    },
+    {
+      "provider": "successfulNormalizedBranches",
+      "label": "parses digits",
+      "input": "v1.0",
+      "output": "1.0.9999999.9999999-dev"
+    },
+    {
+      "provider": "successfulNormalizedBranches",
+      "label": "parses digits/2",
+      "input": "2.0",
+      "output": "2.0.9999999.9999999-dev"
+    },
+    {
+      "provider": "successfulNormalizedBranches",
+      "label": "parses long x",
+      "input": "v1.0.x",
+      "output": "1.0.9999999.9999999-dev"
+    },
+    {
+      "provider": "successfulNormalizedBranches",
+      "label": "parses long *",
+      "input": "v1.0.3.*",
+      "output": "1.0.3.9999999-dev"
+    },
+    {
+      "provider": "successfulNormalizedBranches",
+      "label": "parses long digits",
+      "input": "v2.4.0",
+      "output": "2.4.0.9999999-dev"
+    },
+    {
+      "provider": "successfulNormalizedBranches",
+      "label": "parses long digits/2",
+      "input": "2.4.4",
+      "output": "2.4.4.9999999-dev"
+    },
+    {
+      "provider": "successfulNormalizedBranches",
+      "label": "parses master",
+      "input": "master",
+      "output": "dev-master"
+    },
+    {
+      "provider": "successfulNormalizedBranches",
+      "label": "parses trunk",
+      "input": "trunk",
+      "output": "dev-trunk"
+    },
+    {
+      "provider": "successfulNormalizedBranches",
+      "label": "parses arbitrary",
+      "input": "feature-a",
+      "output": "dev-feature-a"
+    },
+    {
+      "provider": "successfulNormalizedBranches",
+      "label": "parses arbitrary/2",
+      "input": "FOOBAR",
+      "output": "dev-FOOBAR"
+    },
+    {
+      "provider": "successfulNormalizedBranches",
+      "label": "parses arbitrary/3",
+      "input": "feature+issue-1",
+      "output": "dev-feature+issue-1"
+    }
+  ],
+  "changed_inputs": [
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "none",
+      "input": "1.0.0",
+      "output": "1.0.0.0"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "parses state",
+      "input": "1.0.0RC1dev",
+      "output": "1.0.0.0-RC1-dev"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "CI parsing",
+      "input": "1.0.0-rC15-dev",
+      "output": "1.0.0.0-RC15-dev"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "delimiters",
+      "input": "1.0.0.RC.15-dev",
+      "output": "1.0.0.0-RC15-dev"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "RC uppercase",
+      "input": "1.0.0-rc1",
+      "output": "1.0.0.0-RC1"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "patch replace",
+      "input": "1.0.0.pl3-dev",
+      "output": "1.0.0.0-patch3-dev"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "forces w.x.y.z",
+      "input": "1.0-dev",
+      "output": "1.0.0.0-dev"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "forces w.x.y.z/2",
+      "input": "0",
+      "output": "0.0.0.0"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "forces w.x.y.z/maximum major",
+      "input": "99999",
+      "output": "99999.0.0.0"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "parses long",
+      "input": "10.4.13-beta",
+      "output": "10.4.13.0-beta"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "parses long/2",
+      "input": "10.4.13beta2",
+      "output": "10.4.13.0-beta2"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "parses long/semver",
+      "input": "10.4.13beta.2",
+      "output": "10.4.13.0-beta2"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "parses long/semver2",
+      "input": "v1.13.11-beta.0",
+      "output": "1.13.11.0-beta0"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "expand shorthand",
+      "input": "10.4.13-b",
+      "output": "10.4.13.0-beta"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "expand shorthand/2",
+      "input": "10.4.13-b5",
+      "output": "10.4.13.0-beta5"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "strips leading v",
+      "input": "v1.0.0",
+      "output": "1.0.0.0"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "parses dates y-m as classical",
+      "input": "2010.01",
+      "output": "2010.01.0.0"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "parses dates y.m.Y as classical",
+      "input": "2010.1.555",
+      "output": "2010.1.555.0"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "parses dates y.m.Y/2 as classical",
+      "input": "2010.10.200",
+      "output": "2010.10.200.0"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "strips v/datetime",
+      "input": "v20100102",
+      "output": "20100102"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "parses dates w/ - and .",
+      "input": "2010-01-02-10-20-30.0.3",
+      "output": "2010.01.02.10.20.30.0.3"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "parses dates w/ - and ./2",
+      "input": "2010-01-02-10-20-30.5",
+      "output": "2010.01.02.10.20.30.5"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "parses dates w/ -",
+      "input": "2010-01-02",
+      "output": "2010.01.02"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "parses dates w/ .",
+      "input": "2012.06.07",
+      "output": "2012.06.07.0"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "parses numbers",
+      "input": "2010-01-02.5",
+      "output": "2010.01.02.5"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "parses dates y.m.Y",
+      "input": "2010.1.555",
+      "output": "2010.1.555.0"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "parses datetime",
+      "input": "20100102-203040",
+      "output": "20100102.203040"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "parses date dev",
+      "input": "20100102.x-dev",
+      "output": "20100102.9999999.9999999.9999999-dev"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "parses datetime dev",
+      "input": "20100102.203040.x-dev",
+      "output": "20100102.203040.9999999.9999999-dev"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "parses dt+number",
+      "input": "20100102203040-10",
+      "output": "20100102203040.10"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "parses dt+patch",
+      "input": "20100102-203040-p1",
+      "output": "20100102.203040-patch1"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "parses dt Ym dev",
+      "input": "201903.x-dev",
+      "output": "201903.9999999.9999999.9999999-dev"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "parses dt Ym+patch",
+      "input": "201903.0-p2",
+      "output": "201903.0-patch2"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "parses master w/o dev",
+      "input": "master",
+      "output": "dev-master"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "parses branches",
+      "input": "1.x-dev",
+      "output": "1.9999999.9999999.9999999-dev"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "parses arbitrary/2",
+      "input": "DEV-FOOBAR",
+      "output": "dev-FOOBAR"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "ignores aliases",
+      "input": "dev-master as 1.0.0",
+      "output": "dev-master"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "ignores aliases/2",
+      "input": "dev-load-varnish-only-when-used as ^2.0",
+      "output": "dev-load-varnish-only-when-used"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "ignores aliases/3",
+      "input": "dev-load-varnish-only-when-used@dev as ^2.0@dev",
+      "output": "dev-load-varnish-only-when-used"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "ignores stability",
+      "input": "1.0.0+foo@dev",
+      "output": "1.0.0.0"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "ignores stability/2",
+      "input": "dev-load-varnish-only-when-used@stable",
+      "output": "dev-load-varnish-only-when-used"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "semver metadata/2",
+      "input": "1.0.0-beta.5+foo",
+      "output": "1.0.0.0-beta5"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "semver metadata/3",
+      "input": "1.0.0+foo",
+      "output": "1.0.0.0"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "semver metadata/4",
+      "input": "1.0.0-alpha.3.1+foo",
+      "output": "1.0.0.0-alpha3.1"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "semver metadata/5",
+      "input": "1.0.0-alpha2.1+foo",
+      "output": "1.0.0.0-alpha2.1"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "semver metadata/6",
+      "input": "1.0.0-alpha-2.1-3+foo",
+      "output": "1.0.0.0-alpha2.1-3"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "metadata w/ alias",
+      "input": "1.0.0+foo as 2.0",
+      "output": "1.0.0.0"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "keep zero-padding/4",
+      "input": "0700",
+      "output": "0700.0.0.0"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "keep zero-padding/5",
+      "input": "041.x-dev",
+      "output": "041.9999999.9999999.9999999-dev"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "space padding",
+      "input": " 1.0.0",
+      "output": "1.0.0.0"
+    },
+    {
+      "provider": "successfulNormalizedVersions",
+      "label": "space padding/2",
+      "input": "1.0.0 ",
+      "output": "1.0.0.0"
+    },
+    {
+      "provider": "successfulNormalizedBranches",
+      "label": "parses x",
+      "input": "v1.x",
+      "output": "1.9999999.9999999.9999999-dev"
+    },
+    {
+      "provider": "successfulNormalizedBranches",
+      "label": "parses *",
+      "input": "v1.*",
+      "output": "1.9999999.9999999.9999999-dev"
+    },
+    {
+      "provider": "successfulNormalizedBranches",
+      "label": "parses digits",
+      "input": "v1.0",
+      "output": "1.0.9999999.9999999-dev"
+    },
+    {
+      "provider": "successfulNormalizedBranches",
+      "label": "parses digits/2",
+      "input": "2.0",
+      "output": "2.0.9999999.9999999-dev"
+    },
+    {
+      "provider": "successfulNormalizedBranches",
+      "label": "parses long x",
+      "input": "v1.0.x",
+      "output": "1.0.9999999.9999999-dev"
+    },
+    {
+      "provider": "successfulNormalizedBranches",
+      "label": "parses long *",
+      "input": "v1.0.3.*",
+      "output": "1.0.3.9999999-dev"
+    },
+    {
+      "provider": "successfulNormalizedBranches",
+      "label": "parses long digits",
+      "input": "v2.4.0",
+      "output": "2.4.0.9999999-dev"
+    },
+    {
+      "provider": "successfulNormalizedBranches",
+      "label": "parses long digits/2",
+      "input": "2.4.4",
+      "output": "2.4.4.9999999-dev"
+    },
+    {
+      "provider": "successfulNormalizedBranches",
+      "label": "parses master",
+      "input": "master",
+      "output": "dev-master"
+    },
+    {
+      "provider": "successfulNormalizedBranches",
+      "label": "parses trunk",
+      "input": "trunk",
+      "output": "dev-trunk"
+    },
+    {
+      "provider": "successfulNormalizedBranches",
+      "label": "parses arbitrary",
+      "input": "feature-a",
+      "output": "dev-feature-a"
+    },
+    {
+      "provider": "successfulNormalizedBranches",
+      "label": "parses arbitrary/2",
+      "input": "FOOBAR",
+      "output": "dev-FOOBAR"
+    },
+    {
+      "provider": "successfulNormalizedBranches",
+      "label": "parses arbitrary/3",
+      "input": "feature+issue-1",
+      "output": "dev-feature+issue-1"
+    }
+  ]
+}

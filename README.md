@@ -164,3 +164,37 @@ root subtree 以外的 nested `node_modules` 與普通 source 仍走原有
 fragment 或控制字元）及有效 sha256/sha384/sha512 SRI base64 digest，長度需符合
 演算法。無法讀取或驗證即 BLOCK，輸出僅 risk category，不印 metadata／credential。
 此驗證檢查 metadata 結構，不驗證 downloaded bytes 或 registry provenance。
+
+## Level 3 Composer root vendor policy
+
+Only project-root `vendor` qualifies. It must be a physical directory in an
+existing Git repository, ignored by Git and contain no indexed files (including
+staged additions). No install, ignore edits, untracking or CLI bypass occurs.
+Python 3.9+ validates the entire tree: case-insensitive high-risk filenames use
+the root node_modules rules; every symlink (including vendor/bin), special file
+and traversal error blocks. Nested vendor outside this root uses the generic scanner.
+
+Content is excluded from the generic scanner only after all vendor checks pass.
+`composer.lock`, `vendor/composer/installed.json` and `installed.php` must be
+physical readable regular files, with physical ancestors, at most 1 MiB each.
+JSON duplicate keys and malformed structures block. Lock packages/packages-dev
+must have unique safe Composer names and nonempty versions; installed packages
+must equal either production packages or all locked packages. Installed JSON
+supports the legacy package list or Composer 2 packages/dev object. Versions and
+source/dist metadata must match the lock. Installed PHP is parsed as a restricted
+literal returned array (array()/[], strings, integers, booleans, null,
+__DIR__, dirname and concatenation); PHP is never executed. Its root/versions
+ledger must contain exactly the installed packages plus the project root;
+pretty versions, optional normalized versions and source/dist references must
+agree. Non-metapackage install paths in both installed files must resolve to the
+same existing directory strictly inside root vendor; metapackages have null paths.
+Unsupported executable/dynamic PHP, virtual-only ledger entries and ambiguous
+metadata fail closed. This validates metadata consistency, not downloaded bytes
+or package provenance. Risk output contains categories, never metadata values.
+
+`tests/vendor.py` creates isolated fixtures and checks check/dry-run/init rejection,
+redaction and unchanged files/index/config/refs. It covers valid ignored content,
+unignored/tracked/staged vendor, root types, symlinks/path escapes, risky names,
+special files, traversal failures, metadata mismatches, executable PHP rejection,
+ordinary source secrets and nested vendor. `tests/run.sh` runs this alongside
+`dependencies.py`, preserving the node_modules regression coverage.
