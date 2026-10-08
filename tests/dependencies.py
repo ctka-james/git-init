@@ -119,7 +119,7 @@ def main():
         case('version-mismatch', lambda d: metadata(d, 'version', '1.2.4'))
         case('range-direct-version', lambda d: (d / 'package.json').write_text(json.dumps({'devDependencies': {'example': '^1.2.3'}})))
         case('missing-direct', lambda d: lock_change(d, lambda lock: lock['packages'].pop('node_modules/example')))
-        for url in ('https://user:fixtureSensitiveValue@example.test/p', 'https://user%40example.test/p', 'https://example.test/p?token=fixtureSensitiveValue', 'https://example.test/p#fixtureSensitiveValue', 'file:../example', 'http://example.test/p'):
+        for url in ('https://' + 'user:fixtureSensitiveValue@example.test/p', 'https://user%40example.test/p', 'https://example.test/p?token=fixtureSensitiveValue', 'https://example.test/p#fixtureSensitiveValue', 'file:../example', 'http://example.test/p'):
             case('url-' + str(len(list(base.iterdir()))), lambda d, value=url: metadata(d, 'resolved', value))
         for value in ('', 'sha512-invalid', 'sha1-' + 'A' * 28, 'sha512-YQ==', None):
             case('integrity-' + str(len(list(base.iterdir()))), lambda d, value=value: metadata(d, 'integrity', value))

@@ -121,3 +121,75 @@ root subtree 以外的 nested `node_modules` 與普通 source 仍走原有
 fragment 或控制字元）及有效 sha256/sha384/sha512 SRI base64 digest，長度需符合
 演算法。無法讀取或驗證即 BLOCK，輸出僅 risk category，不印 metadata／credential。
 此驗證檢查 metadata 結構，不驗證 downloaded bytes 或 registry provenance。
+
+## Level 3 Composer root vendor policy
+
+Only project-root `vendor` qualifies. It must be a physical directory in an
+existing Git repository, ignored by Git and contain no indexed files (including
+staged additions). No install, ignore edits, untracking or CLI bypass occurs.
+Python 3.9+ validates the entire tree: case-insensitive high-risk filenames use
+the root node_modules rules; every symlink (including vendor/bin), special file
+and traversal error blocks. Nested vendor outside this root uses the generic scanner.
+
+Content is excluded from the generic scanner only after all vendor checks pass.
+`composer.lock`, `vendor/composer/installed.json` and `installed.php` must be
+physical readable regular files, with physical ancestors, at most 1 MiB each.
+JSON duplicate keys and malformed structures block. Lock packages/packages-dev
+must have unique safe Composer names and nonempty versions; installed packages
+must equal either production packages or all locked packages. Installed JSON
+supports the legacy package list or Composer 2 packages/dev object. Versions and
+source/dist metadata must match the lock. Installed PHP is parsed as a restricted
+literal returned array (array()/[], strings, integers, booleans, null,
+__DIR__, dirname and concatenation); PHP is never executed. Its root/versions
+ledger must contain exactly the installed packages plus the project root;
+pretty versions, optional normalized versions and source/dist references must
+agree. Every present JSON `version_normalized` and every installed package PHP
+`version` must independently be a nonempty string in the supported normalized
+output grammar, before equality can authorize the vendor exemption. Invalid values
+(including null, non-string types, non-normalized spellings and control characters)
+emit only `vendor Composer normalized version invalid`. Validate lock entries even
+when dev packages are not installed; optional JSON fields do not bypass PHP validation.
+Accept four-part classical versions with preserved zero padding; date/time numeric
+outputs; canonical alpha/beta/RC/patch modifiers with compound numeric
+identifiers and optional -dev; four-part numeric dev branches (9999999 wildcards),
+legacy `9999999-dev`, and nonempty `dev-` branch names, preserving case, slash,
+plus, internal spaces and comparison characters. Reject surrounding whitespace
+and control characters conservatively. This validates representation and existing
+metadata equality; it does not derive normalized values from pretty versions.
+
+Official source pin (authorized normalized-version fix): Composer **2.10.3**
+[`composer.lock`](https://github.com/composer/composer/blob/2.10.3/composer.lock)
+resolves **composer/semver 3.4.4**, commit
+`198166618906cb2de69b95d7d47e5fa8aa1b2b95`.
+Composer's [Package VersionParser](https://github.com/composer/composer/blob/2.10.3/src/Composer/Package/Version/VersionParser.php)
+extends `Composer\Semver\VersionParser` without overriding normalization.
+The custom policy is corpus-verified against the pinned [upstream parser](https://github.com/composer/semver/blob/198166618906cb2de69b95d7d47e5fa8aa1b2b95/src/VersionParser.php)
+(`normalize`, `normalizeBranch`, `normalizeDefaultBranch`, `expandStability`) and
+[upstream tests](https://github.com/composer/semver/blob/198166618906cb2de69b95d7d47e5fa8aa1b2b95/tests/VersionParserTest.php)
+(`successfulNormalizedVersions`, `successfulNormalizedBranches`, rejection cases).
+The complete successful normalized-version and branch providers are statically
+extracted into `tests/corpus/normalized-outputs.json` with source SHA-256 verification
+(see `tests/corpus/README.md`). Every output is tested against the local policy.
+Lowercase numeric `-stable` is an input spelling: upstream returns the numeric
+base, so the policy rejects that spelling as a normalized numeric output.
+Changed input spellings are not broadly rejected; arbitrary `dev-` names remain
+accepted. This custom policy is corpus-verified, not claimed equivalent to the
+upstream parser or its entire possible output language;
+no PHP or upstream code executes during policy validation.
+
+In both lock and installed JSON, source/dist references must be strings or
+null (missing/empty means absent); validate both types before PHP parsing and
+source-over-dist selection. Invalid types emit only the risk category
+`vendor Composer reference type invalid`, even with matching installed PHP values
+or a valid source and invalid dist. Non-metapackage install paths in both installed
+files must resolve to the same existing directory strictly inside root vendor; metapackages have null paths.
+Unsupported executable/dynamic PHP, virtual-only ledger entries and ambiguous
+metadata fail closed. This validates metadata consistency, not downloaded bytes
+or package provenance. Risk output contains categories, never metadata values.
+
+`tests/vendor.py` creates isolated fixtures and checks check/dry-run/init rejection,
+redaction and unchanged files/index/config/refs. It covers valid ignored content,
+unignored/tracked/staged vendor, root types, symlinks/path escapes, risky names,
+special files, traversal failures, metadata mismatches, executable PHP rejection,
+ordinary source secrets and nested vendor. `tests/run.sh` runs this alongside
+`dependencies.py`, preserving the node_modules regression coverage.

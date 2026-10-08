@@ -42,3 +42,26 @@ traversal (requires an unprivileged user), and a fixture-local `find` returning 
 output with failure. Strict SemVer core/prerelease/build boundaries and URL ports
 are covered. Every rejected check/dry-run/init compares files, directory modes,
 Git index/config/refs and bootstrap metadata before/after, and checks redaction.
+
+Composer Level 3 regressions: `python3 tests/vendor.py` (also run by `run.sh`).
+Fixtures validate root vendor metadata without executing PHP and assert rejection
+redaction/no mutation, including ignored/tracked/staged state, symlinks, escapes,
+filenames, FIFO, unreadable traversal, malformed/mismatched metadata and generic
+source/nested vendor scanning. Permission fixtures require an unprivileged user.
+
+Invalid source/dist reference fixtures cover integer, float, bool, list and object;
+all three modes assert `vendor Composer reference type invalid`, no metadata leak
+and no mutation, including matching PHP values and valid source/invalid dist.
+
+Plan A normalized output corpus: `python3 tests/normalized_corpus.py` (also run
+by `run.sh`). [Extraction/source metadata and method](corpus/README.md) describe
+the complete pinned successful provider data and input-only classification.
+The custom policy is corpus-verified, not claimed equivalent to upstream.
+No PHP runtime or upstream code execution is used.
+
+Four-risk runtime equivalence regression:
+`python3 tests/runtime_equivalence.py --remediated` (also run by `run.sh`).
+[Baseline/RED evidence](runtime-equivalence-tdd.md) records actual fixture argument
+bytes, scanner regex bytes, both grep flag lists, and representative matches.
+Only static URL representation and scanner regex construction changed; all
+existing BLOCK/redaction/no-mutation assertions and scanner policy remain.

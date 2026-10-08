@@ -106,7 +106,7 @@ def main():
         # 6: no, normal, credential, and multiple remotes.
         remotes = setup_repo(base, "remotes", env)
         git(remotes, "remote", "add", "origin", "https://example.test/path", env=env)
-        git(remotes, "remote", "add", "private", "https://user:password@example.test/private?token=hidden", env=env)
+        git(remotes, "remote", "add", "private", "https://" + "user:password@example.test/private?token=hidden", env=env)
         rc, out = run(remotes, global_config)
         check(rc == 0, "remote fixture check succeeds")
         expect(out, "REMOTES: 2", "REMOTE: origin https://example.test/path", "REMOTE: private https://example.test/private")

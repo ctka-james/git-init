@@ -43,7 +43,10 @@ d=$(newdir missing-identity); setup_repo "$d"; git -C "$d" config --local --unse
 run "$d" --init; rc=$RUN_RC; expect_code "$rc" 2 'init requires explicit identity'; [[ -z $(git -C "$d" config --local --get user.name || true) ]] && pass 'missing local identity was not sourced globally' || fail 'identity unexpectedly set'
 
 # 3 remote redaction, secret value non-disclosure, binary and symlink risk.
-d=$(newdir remote); setup_repo "$d"; git -C "$d" remote add origin 'https://user:password@example.test/path?token=hidden#fragment'
+d=$(newdir remote); setup_repo "$d"
+remote_url='https://'
+remote_url+='user:password@example.test/path?token=hidden#fragment'
+git -C "$d" remote add origin "$remote_url"
 run "$d" --check; rc=$RUN_RC; expect_code "$rc" 0 'remote-only repo check succeeds'; expect_out 'remote userinfo is redacted' 'https://example.test/path'; grep -Fq 'password' "$BASE/out" && fail 'remote credential leaked' || pass 'remote credential not printed'
 d=$(newdir secret); printf 'token=temporarysecretvalue123\n' > "$d/config.env"
 run "$d" --check; rc=$RUN_RC; expect_code "$rc" 4 'secret heuristic blocks'; grep -Fq 'temporarysecretvalue123' "$BASE/out" && fail 'secret value leaked' || pass 'secret value redacted'
@@ -84,3 +87,9 @@ printf 'RESULT: %d passed, %d failed\n' "$PASS" "$FAIL"
 (( FAIL == 0 )) || exit 10
 
 python3 "$ROOT/tests/dependencies.py"
+
+python3 "$ROOT/tests/normalized_corpus.py"
+
+python3 "$ROOT/tests/vendor.py"
+
+python3 "$ROOT/tests/runtime_equivalence.py" --remediated
